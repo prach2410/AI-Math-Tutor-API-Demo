@@ -73,6 +73,7 @@ public class LearningFlowService
 
         if (step.IsLast)
         {
+            var (studentFeedback, parentCoachingTips) = BuildFeedback(request.HintCount, request.GuidedCount);
             return new EvaluateResponse(
                 Correct: true,
                 Message: "ยอดเยี่ยมมากเลยครับ! 🎉 ทำครบทุกขั้นตอนแล้ว",
@@ -81,7 +82,9 @@ public class LearningFlowService
                 StudentNote: scenario.StudentNote,
                 ParentSummary: scenario.ParentSummary,
                 IsGuidedAssistance: false,
-                LearningReflection: scenario.LearningReflection
+                LearningReflection: scenario.LearningReflection,
+                StudentFeedback: studentFeedback,
+                ParentCoachingTips: parentCoachingTips
             );
         }
 
@@ -114,6 +117,69 @@ public class LearningFlowService
 
     private static EvaluateResponse Fail(string msg) =>
         new(false, msg, null, null, null, null, false, null);
+
+    private static (string studentFeedback, string parentCoachingTips) BuildFeedback(int hintCount, int guidedCount)
+    {
+        string level;
+        string studentStrengths;
+        string studentImprove;
+
+        if (hintCount == 0 && guidedCount == 0)
+        {
+            level = "ยอดเยี่ยม";
+            studentStrengths = "✅ เข้าใจแนวคิดได้ทันที\n✅ คำนวณทีละขั้นได้ถูกต้อง\n✅ แก้ปัญหาด้วยตนเองได้ทั้งหมด";
+            studentImprove = "ลองท้าทายตัวเองด้วยโจทย์ยากขึ้นได้เลยครับ!";
+        }
+        else if (hintCount <= 2 && guidedCount == 0)
+        {
+            level = "ดีมาก";
+            studentStrengths = "✅ เข้าใจเนื้อหาได้ดี\n✅ พยายามคิดก่อนขอความช่วยเหลือ\n✅ ทำต่อด้วยตนเองได้";
+            studentImprove = "• ลองทำโจทย์เพิ่มเติมโดยไม่ดู hint ครับ\n• ฝึกตรวจคำตอบก่อนส่ง";
+        }
+        else
+        {
+            level = "กำลังพัฒนา";
+            studentStrengths = "✅ พยายามได้ดีมาก\n✅ ไม่ยอมแพ้และทำจนครบทุกขั้น";
+            studentImprove = "• ฝึกการคูณเลขให้คล่องขึ้นครับ\n• ลองทำซ้ำโจทย์เดิมโดยไม่ขอความช่วยเหลือ";
+        }
+
+        string needsPracticeNote = guidedCount >= 2
+            ? "\n\n📌 แนะนำให้ฝึกพื้นฐานเพิ่มเติมก่อนไปโจทย์ถัดไปนะครับ"
+            : "";
+
+        string studentFeedback = $"""
+            🌟 Feedback จาก AI Tutor
+
+            ระดับ: {level}
+
+            วันนี้หนูทำได้ดีมากเลยครับ!
+
+            {studentStrengths}
+
+            สิ่งที่ควรฝึกเพิ่ม
+            {studentImprove}{needsPracticeNote}
+
+            Keep Going! 🚀
+            """;
+
+        string parentCoachingTips = $"""
+            👨‍👩‍👧 ข้อเสนอแนะสำหรับผู้ปกครอง
+
+            ระดับวันนี้: {level}
+
+            วันนี้ลูกเรียนเรื่องปริมาตรและพื้นที่ผิวทรงสี่เหลี่ยมมุมฉาก
+            และทำภารกิจจนครบทุกขั้นตอนแล้วครับ
+
+            กิจกรรมที่แนะนำ
+            - ลองชวนลูกหาตัวอย่างทรงสี่เหลี่ยมในบ้าน
+            - ลองถามว่าปริมาตรหรือพื้นที่ผิวใช้ทำอะไรได้บ้าง
+            - ชมเชยความพยายามมากกว่าผลลัพธ์ครับ
+
+            เป้าหมายคือการเชื่อมโยงคณิตศาสตร์กับชีวิตจริง 🏠
+            """;
+
+        return (studentFeedback, parentCoachingTips);
+    }
 
     private static List<ScenarioDefinition> BuildScenarios() =>
     [
