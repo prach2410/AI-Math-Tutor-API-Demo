@@ -67,6 +67,7 @@ public class BatchSummaryDto
     public DateTime CreatedAt { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string DiscoveryStatus { get; set; } = "not_analyzed"; // "not_analyzed" | "discovery_draft" | "reviewed"
     public string BatchType { get; set; } = "Normal";
     public string AnalysisStatus { get; set; } = "not_analyzed";
     public int SessionCount { get; set; }

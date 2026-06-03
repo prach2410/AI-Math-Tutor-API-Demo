@@ -335,12 +335,23 @@ public class DiscoveryBatchService(AppDbContext db)
         if (entity.BatchSummaryJson is not null)
             summary = JsonSerializer.Deserialize<BatchMetrics>(entity.BatchSummaryJson, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
+        var notesHaveContent = !string.IsNullOrWhiteSpace(notes.KeyObservations)
+            || !string.IsNullOrWhiteSpace(notes.ValidatedDiscoveries)
+            || !string.IsNullOrWhiteSpace(notes.UnconfirmedSignals)
+            || !string.IsNullOrWhiteSpace(notes.ProductDecisions)
+            || !string.IsNullOrWhiteSpace(notes.NextQuestions);
+
+        var discoveryStatus = entity.Status == "reviewed" ? "reviewed"
+            : notesHaveContent ? "discovery_draft"
+            : "not_analyzed";
+
         return new BatchSummaryDto
         {
             BatchId = entity.BatchId,
             CreatedAt = entity.CreatedAt,
             ReviewedAt = entity.ReviewedAt,
             Status = entity.Status,
+            DiscoveryStatus = discoveryStatus,
             BatchType = entity.BatchType,
             AnalysisStatus = entity.AnalysisStatus,
             SessionCount = sessionIds.Count,
