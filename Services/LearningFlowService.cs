@@ -161,7 +161,7 @@ public class LearningFlowService
             : "";
 
         string studentFeedback = $"""
-            🌟 Feedback จาก AI Tutor
+            🌟 ผลการเรียนรู้วันนี้
 
             ระดับ: {level}
 
@@ -172,7 +172,7 @@ public class LearningFlowService
             สิ่งที่ควรฝึกเพิ่ม
             {studentImprove}{needsPracticeNote}
 
-            Keep Going! 🚀
+            ไปต่อได้เลย! 🚀
             """;
 
         string parentCoachingTips = $"""
