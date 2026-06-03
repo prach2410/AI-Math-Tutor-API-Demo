@@ -27,7 +27,8 @@ public record SessionMessage(
     string Role,
     string Type,
     string Text,
-    DateTime Timestamp
+    DateTime Timestamp,
+    string? InputMode = null
 );
 
 public record SessionEvent(
@@ -40,5 +41,7 @@ public record SessionSummary(
     int HelpMeStartUsed,
     int ExampleUsed,
     bool Completed,
-    int DurationSeconds
+    int DurationSeconds,
+    int? VoiceMessages = null,
+    int? TextMessages = null
 );
