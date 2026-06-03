@@ -113,6 +113,89 @@ public class DiscoveryBatchService(AppDbContext db)
         };
     }
 
+    private static BatchMetrics CalculateSummary(JsonElement root)
+    {
+        var metrics = new BatchMetrics();
+        if (!root.TryGetProperty("sessions", out var sessionsEl)) return metrics;
+
+        var sessions = sessionsEl.EnumerateArray().ToList();
+        metrics.TotalSessions = sessions.Count;
+
+        var studentCounts = new Dictionary<string, int>();
+        var deviceCounts  = new Dictionary<string, int>();
+        var abandonedLessons = new Dictionary<string, int>();
+
+        foreach (var s in sessions)
+        {
+            bool completed = false;
+            if (s.TryGetProperty("completed", out var cEl)) completed = cEl.GetBoolean();
+            if (completed) metrics.CompletedSessions++;
+
+            if (s.TryGetProperty("summary", out var sum))
+            {
+                if (sum.TryGetProperty("hintUsed",        out var h))  metrics.HintCount        += h.GetInt32();
+                if (sum.TryGetProperty("helpMeStartUsed", out var hms)) metrics.HelpMeStartCount += hms.GetInt32();
+                if (sum.TryGetProperty("exampleUsed",     out var ex))  metrics.WorkedExampleCount += ex.GetInt32();
+            }
+
+            bool abandoned = false;
+            if (s.TryGetProperty("events", out var evtsEl))
+                abandoned = evtsEl.EnumerateArray().Any(e =>
+                    e.TryGetProperty("type", out var t) && t.GetString() == "session_abandoned");
+
+            if (abandoned)
+            {
+                metrics.AbandonedCount++;
+                if (s.TryGetProperty("topic", out var topicEl))
+                {
+                    var topic = topicEl.GetString() ?? "";
+                    abandonedLessons.TryGetValue(topic, out var cnt);
+                    abandonedLessons[topic] = cnt + 1;
+                }
+            }
+
+            if (s.TryGetProperty("studentId", out var sidEl) && sidEl.ValueKind != JsonValueKind.Null)
+            {
+                var sid = sidEl.GetString() ?? "";
+                if (!string.IsNullOrEmpty(sid))
+                {
+                    studentCounts.TryGetValue(sid, out var sc);
+                    studentCounts[sid] = sc + 1;
+                }
+            }
+
+            if (s.TryGetProperty("deviceId", out var didEl) && didEl.ValueKind != JsonValueKind.Null)
+            {
+                var did = didEl.GetString() ?? "";
+                if (!string.IsNullOrEmpty(did))
+                {
+                    deviceCounts.TryGetValue(did, out var dc);
+                    deviceCounts[did] = dc + 1;
+                }
+            }
+        }
+
+        int total = metrics.TotalSessions;
+        metrics.IncompleteSessions = total - metrics.CompletedSessions;
+        metrics.CompletionRate     = total > 0 ? Math.Round((double)metrics.CompletedSessions / total * 100, 1) : 0;
+        metrics.AbandonmentRate    = total > 0 ? Math.Round((double)metrics.AbandonedCount    / total * 100, 1) : 0;
+        metrics.HintRate           = total > 0 ? Math.Round((double)metrics.HintCount         / total * 100, 1) : 0;
+        metrics.HelpMeStartRate    = total > 0 ? Math.Round((double)metrics.HelpMeStartCount  / total * 100, 1) : 0;
+        metrics.WorkedExampleRate  = total > 0 ? Math.Round((double)metrics.WorkedExampleCount/ total * 100, 1) : 0;
+        metrics.MostAbandonedLesson = abandonedLessons.Count > 0
+            ? abandonedLessons.OrderByDescending(kv => kv.Value).First().Key : string.Empty;
+
+        metrics.UniqueStudents      = studentCounts.Count;
+        metrics.ReturningStudents   = studentCounts.Count(kv => kv.Value > 1);
+        metrics.AvgSessionsPerStudent = metrics.UniqueStudents > 0
+            ? Math.Round((double)total / metrics.UniqueStudents, 1) : 0;
+
+        metrics.UniqueDevices    = deviceCounts.Count;
+        metrics.ReturningDevices = deviceCounts.Count(kv => kv.Value > 1);
+
+        return metrics;
+    }
+
     public async Task<ImportBatchResponse> ImportBatchAsync(string rawJson)
     {
         // Parse uploaded JSON — expect { sessions: [ { sessionId, studentId, startedAt, ... }, ... ] }
@@ -137,12 +220,30 @@ public class DiscoveryBatchService(AppDbContext db)
         }
 
         // Duplicate detection: check sessionId against existing batches
-        var batchedIds = await GetAllBatchedSessionIdsAsync();
-        var duplicates = uploadedIds.Count(id => batchedIds.Contains(id));
+        var allBatches = await db.DiscoveryBatches.ToListAsync();
+        var batchIdMap = new Dictionary<string, string>(); // sessionId → batchId
+        foreach (var b in allBatches)
+        {
+            var ids = JsonSerializer.Deserialize<List<string>>(b.SessionIdsJson) ?? [];
+            foreach (var id in ids) batchIdMap.TryAdd(id, b.BatchId);
+        }
 
+        var duplicates = uploadedIds.Count(id => batchIdMap.ContainsKey(id));
         string duplicateStatus = duplicates == 0 ? "NewBatch"
             : duplicates == uploadedIds.Count ? "AlreadyReviewed"
             : "PartiallyImported";
+
+        // Find which batch most duplicates belong to
+        var dupBatchRef = uploadedIds
+            .Where(id => batchIdMap.ContainsKey(id))
+            .Select(id => batchIdMap[id])
+            .GroupBy(b => b)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault()?.Key ?? string.Empty;
+
+        // Calculate batch summary metrics
+        var summary = CalculateSummary(root);
+        var summaryJson = JsonSerializer.Serialize(summary, _opts);
 
         // Create imported batch
         var batchNumber = (await db.DiscoveryBatches.CountAsync()) + 1;
@@ -156,7 +257,9 @@ public class DiscoveryBatchService(AppDbContext db)
             Status = "draft",
             BatchType = "Imported",
             Source = "Upload",
+            AnalysisStatus = "not_analyzed",
             SourceJson = rawJson,
+            BatchSummaryJson = summaryJson,
             SessionIdsJson = JsonSerializer.Serialize(uploadedIds),
             NotesJson = JsonSerializer.Serialize(new DiscoveryNotes(), _opts)
         });
@@ -170,7 +273,9 @@ public class DiscoveryBatchService(AppDbContext db)
             ImportedAt = now,
             SessionCount = uploadedIds.Count,
             DuplicateStatus = duplicateStatus,
-            DuplicateCount = duplicates
+            DuplicateCount = duplicates,
+            DuplicateBatchRef = dupBatchRef,
+            Summary = summary
         };
     }
 
@@ -189,6 +294,8 @@ public class DiscoveryBatchService(AppDbContext db)
         };
 
         entity.NotesJson = JsonSerializer.Serialize(notes, _opts);
+        if (entity.AnalysisStatus == "not_analyzed")
+            entity.AnalysisStatus = "analysis_generated";
         await db.SaveChangesAsync();
         return true;
     }
@@ -199,6 +306,7 @@ public class DiscoveryBatchService(AppDbContext db)
         if (entity is null) return false;
 
         entity.Status = "reviewed";
+        entity.AnalysisStatus = "reviewed";
         entity.ReviewedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return true;
@@ -223,6 +331,10 @@ public class DiscoveryBatchService(AppDbContext db)
     {
         var sessionIds = JsonSerializer.Deserialize<List<string>>(entity.SessionIdsJson) ?? [];
         var notes = JsonSerializer.Deserialize<DiscoveryNotes>(entity.NotesJson) ?? new DiscoveryNotes();
+        BatchMetrics? summary = null;
+        if (entity.BatchSummaryJson is not null)
+            summary = JsonSerializer.Deserialize<BatchMetrics>(entity.BatchSummaryJson, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
         return new BatchSummaryDto
         {
             BatchId = entity.BatchId,
@@ -230,8 +342,10 @@ public class DiscoveryBatchService(AppDbContext db)
             ReviewedAt = entity.ReviewedAt,
             Status = entity.Status,
             BatchType = entity.BatchType,
+            AnalysisStatus = entity.AnalysisStatus,
             SessionCount = sessionIds.Count,
-            Notes = notes
+            Notes = notes,
+            Summary = summary
         };
     }
 

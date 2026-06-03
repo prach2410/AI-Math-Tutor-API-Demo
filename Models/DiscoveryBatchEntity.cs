@@ -6,9 +6,11 @@ public class DiscoveryBatchEntity
     public DateTime CreatedAt { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string Status { get; set; } = "draft";
-    public string BatchType { get; set; } = "Normal";   // "Normal" | "Imported"
-    public string Source { get; set; } = "System";      // "System" | "Upload"
-    public string? SourceJson { get; set; }              // original uploaded JSON for Imported batches
+    public string BatchType { get; set; } = "Normal";       // "Normal" | "Imported"
+    public string Source { get; set; } = "System";          // "System" | "Upload"
+    public string AnalysisStatus { get; set; } = "not_analyzed"; // "not_analyzed" | "analysis_generated" | "reviewed"
+    public string? SourceJson { get; set; }                  // original uploaded JSON for Imported batches
+    public string? BatchSummaryJson { get; set; }            // calculated metrics JSON
     public string SessionIdsJson { get; set; } = "[]";
     public string NotesJson { get; set; } = "{}";
 }
