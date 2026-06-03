@@ -17,7 +17,8 @@ public record EvaluateRequest(
     string Answer,
     int WrongCount,
     int HintCount = 0,
-    int GuidedCount = 0
+    int GuidedCount = 0,
+    string? StudentName = null
 );
 
 public record EvaluateResponse(

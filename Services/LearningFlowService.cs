@@ -17,20 +17,25 @@ public class LearningFlowService
     public ScenarioDefinition? GetScenario(string id) =>
         _scenarios.GetValueOrDefault(id);
 
-    public AssistResponse GetAssist(string scenarioId, int stepNumber, string type)
+    public AssistResponse GetAssist(string scenarioId, int stepNumber, string type, string? name = null)
     {
         var scenario = GetScenario(scenarioId);
         var step = scenario?.Steps.FirstOrDefault(s => s.StepNumber == stepNumber);
         if (step is null) return new AssistResponse("ไม่พบข้อมูลครับ");
 
+        var n = N(name);
         return type switch
         {
-            "hint"          => new AssistResponse($"💡 {step.Hint}"),
-            "guided"        => new AssistResponse(step.GuidedAssistance),
-            "worked-example"=> new AssistResponse(step.WorkedExample),
-            _               => new AssistResponse("ไม่รู้จัก action นี้ครับ"),
+            "hint"           => new AssistResponse($"💡 {step.Hint}"),
+            "guided"         => new AssistResponse(Personalize(step.GuidedAssistance, n)),
+            "worked-example" => new AssistResponse(step.WorkedExample),
+            _                => new AssistResponse("ไม่รู้จัก action นี้ครับ"),
         };
     }
+
+    public string PersonalizeQuestion(string question, string? name) =>
+        string.IsNullOrWhiteSpace(name) ? question : $"{question}";
+
 
     public EvaluateResponse Evaluate(EvaluateRequest request)
     {
@@ -40,12 +45,14 @@ public class LearningFlowService
         var step = scenario.Steps.FirstOrDefault(s => s.StepNumber == request.StepNumber);
         if (step is null) return Fail("ไม่พบขั้นตอนนี้ครับ");
 
+        var n = N(request.StudentName);
+
         bool needsGuided = HasTriggerWord(request.Answer) || request.WrongCount >= 2;
         if (needsGuided)
         {
             return new EvaluateResponse(
                 Correct: false,
-                Message: step.GuidedAssistance,
+                Message: Personalize(step.GuidedAssistance, n),
                 Hint: null,
                 NextStep: null,
                 StudentNote: null,
@@ -61,7 +68,7 @@ public class LearningFlowService
         {
             return new EvaluateResponse(
                 Correct: false,
-                Message: "ลองคิดใหม่อีกครั้งนะครับ 🤔",
+                Message: $"ลองคิดใหม่อีกครั้งนะ {n} 🤔",
                 Hint: step.Hint,
                 NextStep: null,
                 StudentNote: null,
@@ -73,10 +80,10 @@ public class LearningFlowService
 
         if (step.IsLast)
         {
-            var (studentFeedback, parentCoachingTips) = BuildFeedback(request.HintCount, request.GuidedCount);
+            var (studentFeedback, parentCoachingTips) = BuildFeedback(request.HintCount, request.GuidedCount, n);
             return new EvaluateResponse(
                 Correct: true,
-                Message: "ยอดเยี่ยมมากเลยครับ! 🎉 ทำครบทุกขั้นตอนแล้ว",
+                Message: $"เยี่ยมมากเลย {n}! 🎉 ทำครบทุกขั้นตอนแล้ว",
                 Hint: null,
                 NextStep: null,
                 StudentNote: scenario.StudentNote,
@@ -91,7 +98,7 @@ public class LearningFlowService
         var next = scenario.Steps.First(s => s.StepNumber == request.StepNumber + 1);
         return new EvaluateResponse(
             Correct: true,
-            Message: "ยอดเยี่ยมครับ! 🎉",
+            Message: $"เยี่ยมมากเลย {n}! 🎉",
             Hint: null,
             NextStep: new NextStepDto(next.StepNumber, step.TotalSteps, next.Question, next.IsLast),
             StudentNote: null,
@@ -100,6 +107,12 @@ public class LearningFlowService
             LearningReflection: null
         );
     }
+
+    private static string N(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "น้อง" : name.Trim();
+
+    private static string Personalize(string text, string n) =>
+        text.Replace("ไม่เป็นไรเลยครับ! 💪", $"ไม่เป็นไรเลย {n}! 💪");
 
     private static bool HasTriggerWord(string answer)
     {
@@ -118,7 +131,7 @@ public class LearningFlowService
     private static EvaluateResponse Fail(string msg) =>
         new(false, msg, null, null, null, null, false, null);
 
-    private static (string studentFeedback, string parentCoachingTips) BuildFeedback(int hintCount, int guidedCount)
+    private static (string studentFeedback, string parentCoachingTips) BuildFeedback(int hintCount, int guidedCount, string n = "น้อง")
     {
         string level;
         string studentStrengths;
@@ -152,7 +165,7 @@ public class LearningFlowService
 
             ระดับ: {level}
 
-            วันนี้หนูทำได้ดีมากเลยครับ!
+            วันนี้ {n} ทำได้ดีมากเลยครับ!
 
             {studentStrengths}
 
@@ -167,7 +180,7 @@ public class LearningFlowService
 
             ระดับวันนี้: {level}
 
-            วันนี้ลูกเรียนเรื่องปริมาตรและพื้นที่ผิวทรงสี่เหลี่ยมมุมฉาก
+            วันนี้ {n} เรียนเรื่องปริมาตรและพื้นที่ผิวทรงสี่เหลี่ยมมุมฉาก
             และทำภารกิจจนครบทุกขั้นตอนแล้วครับ
 
             กิจกรรมที่แนะนำ

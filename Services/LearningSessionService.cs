@@ -23,6 +23,9 @@ public class LearningSessionService(AppDbContext db)
         {
             SessionId = req.SessionId,
             StudentAlias = req.StudentAlias,
+            StudentId = req.StudentId,
+            DeviceId = req.DeviceId,
+            DisplayName = req.DisplayName,
             Topic = req.Topic,
             StartedAt = req.StartedAt,
             Completed = false
@@ -33,6 +36,8 @@ public class LearningSessionService(AppDbContext db)
             SessionId = req.SessionId,
             Topic = req.Topic,
             StudentAlias = req.StudentAlias,
+            StudentId = req.StudentId,
+            DeviceId = req.DeviceId,
             CreatedAt = req.StartedAt,
             Completed = false,
             SessionJson = JsonSerializer.Serialize(doc, _opts)
@@ -99,6 +104,9 @@ public class SessionDocument
 {
     public string SessionId { get; set; } = string.Empty;
     public string StudentAlias { get; set; } = "Student-001";
+    public string? StudentId { get; set; }
+    public string? DeviceId { get; set; }
+    public string? DisplayName { get; set; }
     public string Topic { get; set; } = string.Empty;
     public DateTime StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }

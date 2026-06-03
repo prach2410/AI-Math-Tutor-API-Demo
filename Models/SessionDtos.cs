@@ -4,7 +4,10 @@ public record CreateSessionRequest(
     string SessionId,
     string Topic,
     string StudentAlias,
-    DateTime StartedAt
+    DateTime StartedAt,
+    string? StudentId = null,
+    string? DeviceId = null,
+    string? DisplayName = null
 );
 
 public record CompleteSessionRequest(
