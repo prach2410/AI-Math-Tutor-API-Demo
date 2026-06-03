@@ -24,6 +24,9 @@ public record ImportBatchRequest(string Json);
 public class ImportBatchResponse
 {
     public string BatchId { get; set; } = string.Empty;
+    public string BatchType { get; set; } = "Imported";
+    public string Source { get; set; } = "Upload";
+    public DateTime ImportedAt { get; set; }
     public int SessionCount { get; set; }
     public string DuplicateStatus { get; set; } = string.Empty; // "NewBatch" | "PartiallyImported" | "AlreadyReviewed"
     public int DuplicateCount { get; set; }

@@ -115,21 +115,28 @@ public class DiscoveryBatchService(AppDbContext db)
 
     public async Task<ImportBatchResponse> ImportBatchAsync(string rawJson)
     {
-        // Parse uploaded JSON — expect { sessions: [ { sessionId, ... }, ... ] }
+        // Parse uploaded JSON — expect { sessions: [ { sessionId, studentId, startedAt, ... }, ... ] }
         using var doc = JsonDocument.Parse(rawJson);
         var root = doc.RootElement;
 
         var uploadedIds = new List<string>();
+        var uploadedStudentIds = new HashSet<string>();
+        var uploadedDates = new HashSet<string>();
+
         if (root.TryGetProperty("sessions", out var sessionsEl))
         {
             foreach (var s in sessionsEl.EnumerateArray())
             {
                 if (s.TryGetProperty("sessionId", out var idEl))
                     uploadedIds.Add(idEl.GetString() ?? "");
+                if (s.TryGetProperty("studentId", out var sidEl) && sidEl.ValueKind != JsonValueKind.Null)
+                    uploadedStudentIds.Add(sidEl.GetString() ?? "");
+                if (s.TryGetProperty("startedAt", out var dateEl) && dateEl.ValueKind != JsonValueKind.Null)
+                    uploadedDates.Add(dateEl.GetString()?.Substring(0, 10) ?? ""); // date only
             }
         }
 
-        // Duplicate detection against existing batches
+        // Duplicate detection: check sessionId against existing batches
         var batchedIds = await GetAllBatchedSessionIdsAsync();
         var duplicates = uploadedIds.Count(id => batchedIds.Contains(id));
 
@@ -148,6 +155,7 @@ public class DiscoveryBatchService(AppDbContext db)
             CreatedAt = now,
             Status = "draft",
             BatchType = "Imported",
+            Source = "Upload",
             SourceJson = rawJson,
             SessionIdsJson = JsonSerializer.Serialize(uploadedIds),
             NotesJson = JsonSerializer.Serialize(new DiscoveryNotes(), _opts)
@@ -157,6 +165,9 @@ public class DiscoveryBatchService(AppDbContext db)
         return new ImportBatchResponse
         {
             BatchId = batchId,
+            BatchType = "Imported",
+            Source = "Upload",
+            ImportedAt = now,
             SessionCount = uploadedIds.Count,
             DuplicateStatus = duplicateStatus,
             DuplicateCount = duplicates
