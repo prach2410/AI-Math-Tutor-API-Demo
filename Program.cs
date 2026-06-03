@@ -10,6 +10,7 @@ builder.Services.AddSingleton<LearningFlowService>();
 var dbPath = builder.Configuration.GetValue<string>("DatabasePath") ?? "learning_sessions.db";
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={dbPath}"));
 builder.Services.AddScoped<LearningSessionService>();
+builder.Services.AddScoped<DiscoveryBatchService>();
 
 builder.Services.AddCors(options =>
 {
