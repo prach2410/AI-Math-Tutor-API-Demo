@@ -124,6 +124,7 @@ public class DiscoveryBatchService(AppDbContext db)
         var studentCounts = new Dictionary<string, int>();
         var deviceCounts  = new Dictionary<string, int>();
         var abandonedLessons = new Dictionary<string, int>();
+        var abandonedSteps   = new Dictionary<string, int>();
 
         foreach (var s in sessions)
         {
@@ -139,9 +140,32 @@ public class DiscoveryBatchService(AppDbContext db)
             }
 
             bool abandoned = false;
+            int abandonedAtStep = 0;
             if (s.TryGetProperty("events", out var evtsEl))
-                abandoned = evtsEl.EnumerateArray().Any(e =>
+            {
+                var events = evtsEl.EnumerateArray().ToList();
+                abandoned = events.Any(e =>
                     e.TryGetProperty("type", out var t) && t.GetString() == "session_abandoned");
+
+                if (abandoned)
+                {
+                    // Count step_started events before session_abandoned (ordered by timestamp)
+                    var orderedEvents = events
+                        .Where(e => e.TryGetProperty("timestamp", out _))
+                        .OrderBy(e => e.GetProperty("timestamp").GetString())
+                        .ToList();
+
+                    int stepCount = 0;
+                    foreach (var ev in orderedEvents)
+                    {
+                        if (!ev.TryGetProperty("type", out var evType)) continue;
+                        var evTypStr = evType.GetString() ?? "";
+                        if (evTypStr == "session_abandoned") break;
+                        if (evTypStr == "step_started") stepCount++;
+                    }
+                    abandonedAtStep = stepCount;
+                }
+            }
 
             if (abandoned)
             {
@@ -151,6 +175,12 @@ public class DiscoveryBatchService(AppDbContext db)
                     var topic = topicEl.GetString() ?? "";
                     abandonedLessons.TryGetValue(topic, out var cnt);
                     abandonedLessons[topic] = cnt + 1;
+                }
+                if (abandonedAtStep > 0)
+                {
+                    var stepKey = $"Step {abandonedAtStep}";
+                    abandonedSteps.TryGetValue(stepKey, out var sc);
+                    abandonedSteps[stepKey] = sc + 1;
                 }
             }
 
@@ -184,6 +214,8 @@ public class DiscoveryBatchService(AppDbContext db)
         metrics.WorkedExampleRate  = total > 0 ? Math.Round((double)metrics.WorkedExampleCount/ total * 100, 1) : 0;
         metrics.MostAbandonedLesson = abandonedLessons.Count > 0
             ? abandonedLessons.OrderByDescending(kv => kv.Value).First().Key : string.Empty;
+        metrics.MostAbandonedStep = abandonedSteps.Count > 0
+            ? abandonedSteps.OrderByDescending(kv => kv.Value).First().Key : string.Empty;
 
         metrics.UniqueStudents      = studentCounts.Count;
         metrics.ReturningStudents   = studentCounts.Count(kv => kv.Value > 1);
@@ -192,6 +224,8 @@ public class DiscoveryBatchService(AppDbContext db)
 
         metrics.UniqueDevices    = deviceCounts.Count;
         metrics.ReturningDevices = deviceCounts.Count(kv => kv.Value > 1);
+        metrics.AvgSessionsPerDevice = metrics.UniqueDevices > 0
+            ? Math.Round((double)total / metrics.UniqueDevices, 1) : 0;
 
         return metrics;
     }

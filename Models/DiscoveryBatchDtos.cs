@@ -39,6 +39,7 @@ public class BatchMetrics
     public int AbandonedCount { get; set; }
     public double AbandonmentRate { get; set; }
     public string MostAbandonedLesson { get; set; } = string.Empty;
+    public string MostAbandonedStep { get; set; } = string.Empty;
     // Students
     public int UniqueStudents { get; set; }
     public int ReturningStudents { get; set; }
@@ -46,6 +47,7 @@ public class BatchMetrics
     // Devices
     public int UniqueDevices { get; set; }
     public int ReturningDevices { get; set; }
+    public double AvgSessionsPerDevice { get; set; }
 }
 
 public class ImportBatchResponse
