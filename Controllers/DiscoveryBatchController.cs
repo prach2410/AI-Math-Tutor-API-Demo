@@ -1,3 +1,4 @@
+using System.Text.Json;
 using backend.Models;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -32,6 +33,20 @@ public class DiscoveryBatchController(DiscoveryBatchService service) : Controlle
     {
         var result = await service.ExportBatchAsync(batchId);
         return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] ImportBatchRequest req)
+    {
+        try
+        {
+            var result = await service.ImportBatchAsync(req.Json);
+            return Ok(result);
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new { error = "Invalid JSON format" });
+        }
     }
 
     [HttpGet("analysis-prompt")]

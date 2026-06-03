@@ -88,6 +88,10 @@ public class DiscoveryBatchService(AppDbContext db)
         var entity = await db.DiscoveryBatches.FindAsync(batchId);
         if (entity is null) return null;
 
+        // For imported batches, return the original uploaded JSON
+        if (entity.BatchType == "Imported" && entity.SourceJson is not null)
+            return JsonSerializer.Deserialize<JsonElement>(entity.SourceJson);
+
         var sessionIds = JsonSerializer.Deserialize<List<string>>(entity.SessionIdsJson) ?? [];
 
         var sessions = await db.LearningSessions
@@ -106,6 +110,56 @@ public class DiscoveryBatchService(AppDbContext db)
             sessionCount = sessions.Count,
             analysisPrompt = AnalysisPromptText,
             sessions = sessionDocs
+        };
+    }
+
+    public async Task<ImportBatchResponse> ImportBatchAsync(string rawJson)
+    {
+        // Parse uploaded JSON — expect { sessions: [ { sessionId, ... }, ... ] }
+        using var doc = JsonDocument.Parse(rawJson);
+        var root = doc.RootElement;
+
+        var uploadedIds = new List<string>();
+        if (root.TryGetProperty("sessions", out var sessionsEl))
+        {
+            foreach (var s in sessionsEl.EnumerateArray())
+            {
+                if (s.TryGetProperty("sessionId", out var idEl))
+                    uploadedIds.Add(idEl.GetString() ?? "");
+            }
+        }
+
+        // Duplicate detection against existing batches
+        var batchedIds = await GetAllBatchedSessionIdsAsync();
+        var duplicates = uploadedIds.Count(id => batchedIds.Contains(id));
+
+        string duplicateStatus = duplicates == 0 ? "NewBatch"
+            : duplicates == uploadedIds.Count ? "AlreadyReviewed"
+            : "PartiallyImported";
+
+        // Create imported batch
+        var batchNumber = (await db.DiscoveryBatches.CountAsync()) + 1;
+        var batchId = $"batch-{batchNumber:D3}";
+        var now = DateTime.UtcNow;
+
+        db.DiscoveryBatches.Add(new DiscoveryBatchEntity
+        {
+            BatchId = batchId,
+            CreatedAt = now,
+            Status = "draft",
+            BatchType = "Imported",
+            SourceJson = rawJson,
+            SessionIdsJson = JsonSerializer.Serialize(uploadedIds),
+            NotesJson = JsonSerializer.Serialize(new DiscoveryNotes(), _opts)
+        });
+        await db.SaveChangesAsync();
+
+        return new ImportBatchResponse
+        {
+            BatchId = batchId,
+            SessionCount = uploadedIds.Count,
+            DuplicateStatus = duplicateStatus,
+            DuplicateCount = duplicates
         };
     }
 
@@ -164,6 +218,7 @@ public class DiscoveryBatchService(AppDbContext db)
             CreatedAt = entity.CreatedAt,
             ReviewedAt = entity.ReviewedAt,
             Status = entity.Status,
+            BatchType = entity.BatchType,
             SessionCount = sessionIds.Count,
             Notes = notes
         };
