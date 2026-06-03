@@ -85,6 +85,14 @@ public class LearningSessionService(AppDbContext db)
         return true;
     }
 
+    public async Task<int> DeleteAllAsync()
+    {
+        var count = await db.LearningSessions.CountAsync();
+        db.LearningSessions.RemoveRange(db.LearningSessions);
+        await db.SaveChangesAsync();
+        return count;
+    }
+
     public async Task<ExportResponse> ExportAsync()
     {
         var sessions = await db.LearningSessions

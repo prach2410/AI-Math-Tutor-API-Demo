@@ -34,4 +34,11 @@ public class LearningSessionController(LearningSessionService service) : Control
         var result = await service.ExportAsync();
         return Ok(result);
     }
+
+    [HttpDelete("api/admin/learning-sessions")]
+    public async Task<IActionResult> DeleteAll()
+    {
+        var count = await service.DeleteAllAsync();
+        return Ok(new { deleted = count });
+    }
 }

@@ -104,7 +104,7 @@ public class DiscoveryBatchService(AppDbContext db)
             version = "Demo V1.10",
             batchId,
             sessionCount = sessions.Count,
-            analysisPrompt = AnalysisPrompt,
+            analysisPrompt = AnalysisPromptText,
             sessions = sessionDocs
         };
     }
@@ -169,20 +169,101 @@ public class DiscoveryBatchService(AppDbContext db)
         };
     }
 
-    private const string AnalysisPrompt = """
-        Analyze this AI Tutor Learning Session Batch.
+    public const string AnalysisPromptText = """
+        You are a product discovery analyst for an AI Math Tutor application.
 
-        Please summarize:
+        Analyze the learning session batch below and produce a structured discovery report.
 
-        1. Where did students struggle?
-        2. Which Teaching Actions helped most?
-        3. Was Help Me Start useful?
-        4. Was Worked Example useful?
-        5. Did students complete the lessons?
-        6. Did Parent Summary create value?
-        7. What Product Discoveries are supported?
-        8. What should be improved next?
-        9. What should NOT be built yet?
-        10. What should be added to MVP Scope?
+        Follow this exact output structure:
+
+        ---
+
+        ## 1. Batch Summary (Quantitative Metrics)
+
+        Calculate and report:
+
+        Session Metrics:
+        - Total Sessions
+        - Completed Sessions
+        - Incomplete Sessions
+        - Completion Rate (%)
+
+        Help Usage Metrics:
+        - Hint Usage Count and Rate (%)
+        - Help Me Start Usage Count and Rate (%)
+        - Worked Example Usage Count and Rate (%)
+
+        Learning Friction Metrics:
+        - Session Abandoned Count and Rate (%)
+        - Most Abandoned Lesson (if data exists)
+        - Most Abandoned Step (if data exists)
+
+        Student & Device Metrics:
+        - Returning Students vs New Students (if studentId exists)
+        - Average Sessions Per Student
+        - Returning Devices vs New Devices (if deviceId exists)
+
+        ---
+
+        ## 2. Evidence
+
+        List only facts observable from the logs.
+        Format: "X out of Y sessions [did something]."
+        Do NOT make interpretations yet.
+
+        ---
+
+        ## 3. Key Observations
+
+        Based on evidence, describe what you observe.
+        Keep observations descriptive. Avoid conclusions.
+
+        ---
+
+        ## 4. Unconfirmed Signals
+
+        Generate hypotheses that the evidence suggests but does not yet prove.
+        Label clearly as signals, not discoveries.
+
+        ---
+
+        ## 5. Validated Discoveries
+
+        Only include findings that are:
+        - Supported by multiple sessions
+        - Observable from logs
+        - Repeatable across sessions
+
+        Each discovery must reference supporting evidence.
+        Avoid strong conclusions from small samples (fewer than 5 sessions).
+
+        ---
+
+        ## 6. Product Decisions
+
+        Suggest specific, MVP-focused actions.
+        Each decision must be grounded in evidence.
+
+        Do NOT recommend:
+        - Multi-Agent Systems
+        - Advanced Analytics
+        - Gamification
+        - RAG Expansion
+        - Complex Personalization
+
+        unless directly supported by evidence in this batch.
+
+        ---
+
+        ## 7. Next Questions
+
+        List unanswered questions this batch raises.
+        These will guide the next batch collection.
+
+        ---
+
+        Principle: Raw Logs → Evidence → Discovery → Product Decisions → MVP
+        Never skip directly from ideas to features.
         """;
+
 }

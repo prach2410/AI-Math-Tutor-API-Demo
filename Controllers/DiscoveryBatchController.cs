@@ -34,6 +34,10 @@ public class DiscoveryBatchController(DiscoveryBatchService service) : Controlle
         return result is null ? NotFound() : Ok(result);
     }
 
+    [HttpGet("analysis-prompt")]
+    public IActionResult GetAnalysisPrompt()
+        => Ok(new { prompt = DiscoveryBatchService.AnalysisPromptText });
+
     [HttpPut("{batchId}/notes")]
     public async Task<IActionResult> UpdateNotes(string batchId, [FromBody] UpdateNotesRequest req)
     {
