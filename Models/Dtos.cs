@@ -40,3 +40,17 @@ public record NextStepDto(
     string Question,
     bool IsLast
 );
+
+public record FreeTalkMessage(string Role, string Content);
+
+public record FreeTalkRequest(
+    List<FreeTalkMessage> History,
+    string Message,
+    string? StudentName = null,
+    bool DuringLesson = false
+);
+
+public record FreeTalkResponse(
+    string Message,
+    bool SuggestLesson = false
+);

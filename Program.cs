@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddSingleton<LearningFlowService>();
+builder.Services.AddSingleton<FreeTalkService>();
 
 var dbPath = builder.Configuration.GetValue<string>("DatabasePath") ?? "learning_sessions.db";
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={dbPath}"));
