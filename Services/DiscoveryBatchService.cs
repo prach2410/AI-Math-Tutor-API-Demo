@@ -35,7 +35,7 @@ public class DiscoveryBatchService(AppDbContext db)
 
         var batchNumber = (await db.DiscoveryBatches.CountAsync()) + 1;
         var batchId = $"batch-{batchNumber:D3}";
-        var now = DateTime.UtcNow;
+        var now = DateTime.UtcNow.AddHours(7);
 
         db.DiscoveryBatches.Add(new DiscoveryBatchEntity
         {
@@ -104,7 +104,7 @@ public class DiscoveryBatchService(AppDbContext db)
 
         return new
         {
-            exportedAt = DateTime.UtcNow,
+            exportedAt = DateTime.UtcNow.AddHours(7),
             version = "Demo V1.10",
             batchId,
             sessionCount = sessions.Count,
@@ -282,7 +282,7 @@ public class DiscoveryBatchService(AppDbContext db)
         // Create imported batch
         var batchNumber = (await db.DiscoveryBatches.CountAsync()) + 1;
         var batchId = $"batch-{batchNumber:D3}";
-        var now = DateTime.UtcNow;
+        var now = DateTime.UtcNow.AddHours(7);
 
         db.DiscoveryBatches.Add(new DiscoveryBatchEntity
         {
@@ -341,7 +341,7 @@ public class DiscoveryBatchService(AppDbContext db)
 
         entity.Status = "reviewed";
         entity.AnalysisStatus = "reviewed";
-        entity.ReviewedAt = DateTime.UtcNow;
+        entity.ReviewedAt = DateTime.UtcNow.AddHours(7);
         await db.SaveChangesAsync();
         return true;
     }

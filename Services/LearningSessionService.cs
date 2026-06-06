@@ -74,7 +74,7 @@ public class LearningSessionService(AppDbContext db)
         {
             SummaryOpened = true,
             FeedbackSubmitted = true,
-            FeedbackSubmittedAt = DateTime.UtcNow,
+            FeedbackSubmittedAt = DateTime.UtcNow.AddHours(7),
             UnderstandingLevel = req.UnderstandingLevel,
             MostValuableSection = req.MostValuableSection,
             Comment = req.Comment
@@ -100,7 +100,7 @@ public class LearningSessionService(AppDbContext db)
             .ToListAsync();
 
         return new ExportResponse(
-            ExportedAt: DateTime.UtcNow,
+            ExportedAt: DateTime.UtcNow.AddHours(7),
             Version: "Demo V1.10",
             TotalSessions: sessions.Count,
             Sessions: sessions.Select(s => JsonSerializer.Deserialize<JsonElement>(s.SessionJson)).ToList()
