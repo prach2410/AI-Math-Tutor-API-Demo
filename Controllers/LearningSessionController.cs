@@ -28,6 +28,13 @@ public class LearningSessionController(LearningSessionService service) : Control
         return ok ? Ok() : NotFound();
     }
 
+    [HttpPost("api/learning-sessions/{sessionId}/reflection")]
+    public async Task<IActionResult> Reflection(string sessionId, [FromBody] ReflectionRequest req)
+    {
+        var ok = await service.UpdateReflectionAsync(sessionId, req);
+        return ok ? Ok() : NotFound();
+    }
+
     [HttpGet("api/admin/learning-sessions/export")]
     public async Task<IActionResult> Export()
     {

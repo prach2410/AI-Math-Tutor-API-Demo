@@ -85,6 +85,25 @@ public class LearningSessionService(AppDbContext db)
         return true;
     }
 
+    public async Task<bool> UpdateReflectionAsync(string sessionId, ReflectionRequest req)
+    {
+        var entity = await db.LearningSessions.FindAsync(sessionId);
+        if (entity is null) return false;
+
+        var doc = JsonSerializer.Deserialize<SessionDocument>(entity.SessionJson, _opts) ?? new SessionDocument();
+        doc.Reflection = new ReflectionData
+        {
+            WhatILearned = req.WhatILearned,
+            MostDifficultPart = req.MostDifficultPart,
+            WhatIWantToRemember = req.WhatIWantToRemember,
+            SubmittedAt = req.SubmittedAt
+        };
+
+        entity.SessionJson = JsonSerializer.Serialize(doc, _opts);
+        await db.SaveChangesAsync();
+        return true;
+    }
+
     public async Task<int> DeleteAllAsync()
     {
         var count = await db.LearningSessions.CountAsync();
@@ -123,6 +142,7 @@ public class SessionDocument
     public List<SessionEvent>? Events { get; set; }
     public SessionSummary? Summary { get; set; }
     public ParentFeedbackData? ParentFeedback { get; set; }
+    public ReflectionData? Reflection { get; set; }
 }
 
 public class ParentFeedbackData
@@ -133,6 +153,14 @@ public class ParentFeedbackData
     public string UnderstandingLevel { get; set; } = string.Empty;
     public string? MostValuableSection { get; set; }
     public string? Comment { get; set; }
+}
+
+public class ReflectionData
+{
+    public string? WhatILearned { get; set; }
+    public string? MostDifficultPart { get; set; }
+    public string? WhatIWantToRemember { get; set; }
+    public DateTime? SubmittedAt { get; set; }
 }
 
 public record ExportResponse(

@@ -23,6 +23,13 @@ public record ParentFeedbackRequest(
     string? Comment
 );
 
+public record ReflectionRequest(
+    string? WhatILearned,
+    string? MostDifficultPart,
+    string? WhatIWantToRemember,
+    DateTime SubmittedAt
+);
+
 public record SessionMessage(
     string Role,
     string Type,
