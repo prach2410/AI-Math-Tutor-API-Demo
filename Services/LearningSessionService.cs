@@ -104,6 +104,15 @@ public class LearningSessionService(AppDbContext db)
         return true;
     }
 
+    public async Task<bool> DeleteOneAsync(string sessionId)
+    {
+        var entity = await db.LearningSessions.FindAsync(sessionId);
+        if (entity is null) return false;
+        db.LearningSessions.Remove(entity);
+        await db.SaveChangesAsync();
+        return true;
+    }
+
     public async Task<int> DeleteAllAsync()
     {
         var count = await db.LearningSessions.CountAsync();

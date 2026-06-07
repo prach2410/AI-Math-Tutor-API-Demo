@@ -42,6 +42,13 @@ public class LearningSessionController(LearningSessionService service) : Control
         return Ok(result);
     }
 
+    [HttpDelete("api/learning-sessions/{sessionId}")]
+    public async Task<IActionResult> DeleteOne(string sessionId)
+    {
+        var ok = await service.DeleteOneAsync(sessionId);
+        return ok ? Ok() : NotFound();
+    }
+
     [HttpDelete("api/admin/learning-sessions")]
     public async Task<IActionResult> DeleteAll()
     {

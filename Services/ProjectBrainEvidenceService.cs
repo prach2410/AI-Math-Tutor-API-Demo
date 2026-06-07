@@ -35,6 +35,36 @@ public class ProjectBrainEvidenceService(AppDbContext db)
         await db.SaveChangesAsync();
     }
 
+    public async Task<object> ExportAsync()
+    {
+        var all = await db.ProjectBrainEvidence
+            .OrderByDescending(e => e.CreatedAt)
+            .ToListAsync();
+
+        return new
+        {
+            exportedAt = DateTime.UtcNow,
+            version = "ProjectBrain V1.0",
+            totalSessions = all.Count,
+            sessions = all.Select(e => new
+            {
+                e.Id,
+                e.SessionId,
+                e.StudentId,
+                e.Topic,
+                e.CreatedAt,
+                evidence  = TryDeserialize(e.EvidenceJson),
+                summary   = TryDeserialize(e.SummaryJson),
+            })
+        };
+    }
+
+    private static object? TryDeserialize(string json)
+    {
+        try { return JsonSerializer.Deserialize<object>(json, JsonOpts); }
+        catch { return null; }
+    }
+
     public async Task<List<ProjectBrainEvidenceEntity>> GetRecentAsync(string studentId, int limit = 5)
     {
         return await db.ProjectBrainEvidence

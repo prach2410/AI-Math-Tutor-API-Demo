@@ -30,4 +30,11 @@ public class ProjectBrainController(
         var results = await evidenceService.GetRecentAsync(studentId, limit);
         return Ok(results);
     }
+
+    [HttpGet("/api/admin/project-brain/export")]
+    public async Task<IActionResult> Export()
+    {
+        var result = await evidenceService.ExportAsync();
+        return Ok(result);
+    }
 }
