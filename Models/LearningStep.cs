@@ -9,5 +9,6 @@ public record LearningStep(
     string GuidedAssistance,
     string WorkedExample,
     bool IsLast,
-    string? TeachingMoment = null
+    string? TeachingMoment = null,
+    string? TechniqueType = null
 );

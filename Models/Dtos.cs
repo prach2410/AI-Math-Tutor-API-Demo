@@ -31,7 +31,8 @@ public record EvaluateResponse(
     bool IsGuidedAssistance,
     List<string>? LearningReflection,
     string? StudentFeedback = null,
-    string? ParentCoachingTips = null
+    string? ParentCoachingTips = null,
+    string? TeachingMomentType = null
 );
 
 public record NextStepDto(
