@@ -8,5 +8,6 @@ public record LearningStep(
     string Hint,
     string GuidedAssistance,
     string WorkedExample,
-    bool IsLast
+    bool IsLast,
+    string? TeachingMoment = null
 );
