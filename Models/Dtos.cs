@@ -55,3 +55,18 @@ public record FreeTalkResponse(
     string Message,
     bool SuggestLesson = false
 );
+
+public record ProjectBrainMessage(string Role, string Text);
+
+public record ProjectBrainRequest(
+    List<ProjectBrainMessage> History,
+    string Message,
+    string Phase,
+    string? StudentName = null
+);
+
+public record ProjectBrainResponse(
+    string Message,
+    string Phase,
+    bool SuggestSummary = false
+);
