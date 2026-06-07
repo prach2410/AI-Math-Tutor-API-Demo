@@ -65,8 +65,29 @@ public record ProjectBrainRequest(
     string? StudentName = null
 );
 
+public record EvidenceItem(
+    string EvidenceType,
+    string UserStatement,
+    string AiInterpretation,
+    double Confidence
+);
+
 public record ProjectBrainResponse(
     string Message,
     string Phase,
-    bool SuggestSummary = false
+    bool SuggestSummary = false,
+    List<EvidenceItem>? Evidence = null
+);
+
+public record SaveEvidenceRequest(
+    string? StudentId,
+    string Topic,
+    List<EvidenceItem> Items
+);
+
+public record EvidenceSummary(
+    List<string> StrongEvidence,
+    List<string> PartialEvidence,
+    List<string> OpenQuestions,
+    List<string> PossibleMisalignment
 );

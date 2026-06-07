@@ -8,6 +8,7 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<LearningFlowService>();
 builder.Services.AddSingleton<FreeTalkService>();
 builder.Services.AddSingleton<ProjectBrainTutorService>();
+builder.Services.AddScoped<ProjectBrainEvidenceService>();
 
 var dbPath = builder.Configuration.GetValue<string>("DatabasePath") ?? "learning_sessions.db";
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={dbPath}"));

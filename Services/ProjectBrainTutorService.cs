@@ -18,27 +18,71 @@ public class ProjectBrainTutorService
     private static readonly string[] ApplyWords    = ["เช่น", "ตัวอย่าง", "ลูก", "ในชีวิต", "ใช้กับ"];
     private static readonly string[] ConnectWords  = ["เหมือน", "คล้าย", "เชื่อมโยง", "เกี่ยวกับ", "ก็เหมือน"];
     private static readonly string[] ReflectWords  = ["ไม่แน่ใจ", "คิดว่า", "น่าจะ", "อาจจะ", "สงสัย", "ยังไม่"];
-
-    private static readonly Random Rng = new();
+    private static readonly string[] QuestionWords = ["?", "？", "อย่างไร", "ทำไม", "ได้ไหม", "ใช่ไหม"];
 
     public ProjectBrainResponse Chat(ProjectBrainRequest req)
     {
-        var n       = string.IsNullOrWhiteSpace(req.StudentName) ? "คุณ" : req.StudentName;
-        var msg     = req.Message.Trim();
-        var phase   = req.Phase;
+        var n         = string.IsNullOrWhiteSpace(req.StudentName) ? "คุณ" : req.StudentName;
+        var msg       = req.Message.Trim();
+        var phase     = req.Phase;
         var userTurns = req.History.Count(h => h.Role == "user");
+
+        // Extract evidence from user message (skip teach phase — it's the AI talking)
+        List<EvidenceItem>? evidence = null;
+        if (phase != "teach" && msg != "เริ่ม")
+            evidence = ExtractEvidence(msg);
 
         // Explicit summary request any time
         if (phase == "summary" || msg.Contains("สรุป") || msg.Contains("ขอสรุป"))
-            return new ProjectBrainResponse(BuildSummary(req.History, n), "summary");
+            return new ProjectBrainResponse(BuildSummary(req.History, n), "summary", Evidence: evidence);
 
-        return phase switch
+        var baseResponse = phase switch
         {
             "teach"   => HandleTeach(n),
             "reflect" => HandleReflect(n, msg),
             "grill"   => HandleGrill(n, msg, userTurns),
             _         => HandleTeach(n),
         };
+
+        // Attach evidence to response
+        return baseResponse with { Evidence = evidence };
+    }
+
+    // ── Evidence extraction ──────────────────────────────────────────────────
+
+    private static List<EvidenceItem> ExtractEvidence(string msg)
+    {
+        var items = new List<EvidenceItem>();
+
+        TryAdd(items, msg, "Explain", ExplainWords,
+            "ผู้ใช้อธิบายแนวคิดด้วยคำของตัวเอง");
+        TryAdd(items, msg, "Reason", ReasonWords,
+            "ผู้ใช้ให้เหตุผลหรืออธิบายที่มาของความคิด");
+        TryAdd(items, msg, "Apply", ApplyWords,
+            "ผู้ใช้นำแนวคิดไปใช้กับตัวอย่างหรือสถานการณ์จริง");
+        TryAdd(items, msg, "Connect", ConnectWords,
+            "ผู้ใช้เชื่อมโยงแนวคิดกับความรู้หรือประสบการณ์อื่น");
+        TryAdd(items, msg, "Reflect", ReflectWords,
+            "ผู้ใช้สะท้อนความคิดหรือแสดงความไม่แน่ใจ");
+        TryAdd(items, msg, "Question", QuestionWords,
+            "ผู้ใช้ตั้งคำถามเพิ่มเติม");
+
+        return items;
+    }
+
+    private static void TryAdd(List<EvidenceItem> items, string msg,
+        string evidenceType, string[] keywords, string interpretation)
+    {
+        var matchCount = keywords.Count(k => msg.Contains(k, StringComparison.OrdinalIgnoreCase));
+        if (matchCount == 0) return;
+
+        double confidence = matchCount >= 2 ? 0.9 : 0.7;
+        items.Add(new EvidenceItem(
+            EvidenceType:      evidenceType,
+            UserStatement:     msg,
+            AiInterpretation:  interpretation,
+            Confidence:        confidence
+        ));
     }
 
     // ── Phase handlers ───────────────────────────────────────────────────────
@@ -69,7 +113,6 @@ public class ProjectBrainTutorService
 
     private static ProjectBrainResponse HandleReflect(string n, string msg)
     {
-        // Acknowledge and probe deeper based on what they said
         bool hasReason  = Contains(msg, ReasonWords);
         bool hasExample = Contains(msg, ApplyWords);
 
@@ -92,8 +135,6 @@ public class ProjectBrainTutorService
 
     private static ProjectBrainResponse HandleGrill(string n, string msg, int userTurns)
     {
-        // userTurns counts all user messages in history (including reflect turn)
-        // grill turn index = userTurns - 1 (since first user turn was the reflect)
         int grillTurn = Math.Max(0, userTurns - 1);
 
         bool hasReason  = Contains(msg, ReasonWords);
@@ -107,7 +148,6 @@ public class ProjectBrainTutorService
         else
             ack = $"ขอบคุณสำหรับคำตอบนะคะ {n}\n\n";
 
-        // If 3+ grill turns → suggest summary
         if (grillTurn >= 2)
         {
             var closingText = ack +
@@ -118,7 +158,6 @@ public class ProjectBrainTutorService
             return new ProjectBrainResponse(closingText, "grill", SuggestSummary: true);
         }
 
-        // Pick next grill question
         int nextIdx = Math.Min(grillTurn + 1, GrillQuestions.Length - 1);
         var text = ack + GrillQuestions[nextIdx];
 
@@ -136,7 +175,6 @@ public class ProjectBrainTutorService
 
         var allText = string.Join(" ", userMessages);
 
-        // Detect evidence types from full conversation
         var evidence = new List<string>();
         if (Contains(allText, ExplainWords))  evidence.Add("✓ Explain — อธิบายแนวคิดด้วยคำของตัวเองได้");
         if (Contains(allText, ReasonWords))   evidence.Add("✓ Reason — ให้เหตุผลของ decision ได้");
@@ -148,7 +186,6 @@ public class ProjectBrainTutorService
             ? string.Join("\n", evidence)
             : "ยังไม่พบหลักฐานความเข้าใจที่ชัดเจน — ลองคุยต่อได้นะคะ";
 
-        // Check for any uncertainty
         bool hasOpenQ = Contains(allText, ReflectWords) ||
                         Contains(allText, new[] { "ยังไม่", "ไม่แน่", "อาจ", "สงสัย" });
 
