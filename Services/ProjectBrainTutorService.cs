@@ -27,9 +27,9 @@ public class ProjectBrainTutorService
         var phase     = req.Phase;
         var userTurns = req.History.Count(h => h.Role == "user");
 
-        // Extract evidence from user message (skip teach/retrieval — AI is talking)
+        // Extract evidence from user message (skip teach/retrieval/guided/ready — still context-building)
         List<EvidenceItem>? evidence = null;
-        if (phase != "teach" && phase != "retrieval" && msg != "เริ่ม")
+        if (phase != "teach" && phase != "retrieval" && phase != "guided" && phase != "ready" && msg != "เริ่ม")
             evidence = ExtractEvidence(msg);
 
         // Explicit summary request any time
@@ -40,6 +40,8 @@ public class ProjectBrainTutorService
         {
             "teach"     => HandleTeach(n),
             "retrieval" => HandleRetrieval(n, req.PriorEvidenceSummary ?? ""),
+            "guided"    => HandleGuided(n, msg, userTurns),
+            "ready"     => HandleReady(n, msg),
             "check"     => HandleCheck(n, msg, evidence, userTurns),
             "reflect"   => HandleReflect(n, msg),
             "grill"     => HandleGrill(n, msg, userTurns),
@@ -72,8 +74,8 @@ public class ProjectBrainTutorService
             "ลองอธิบายให้ฟังได้เลยค่ะ —\n" +
             "Understanding Engine คืออะไร ในความเข้าใจของคุณ?";
 
-        // ← changed: now advances to "check" instead of "reflect"
-        return new ProjectBrainResponse(text, "check");
+        // ← advances to "guided" (Guided Understanding) before Comprehension Check
+        return new ProjectBrainResponse(text, "guided");
     }
 
     private static ProjectBrainResponse HandleRetrieval(string n, string priorSummary)
@@ -91,6 +93,47 @@ public class ProjectBrainTutorService
             "หรืออยากเพิ่มเติมหรือเปลี่ยนใจอะไรก็ได้เลย 😊";
 
         // Skip teach for returning users — go straight to check
+        return new ProjectBrainResponse(text, "check");
+    }
+
+    private static ProjectBrainResponse HandleGuided(string n, string msg, int userTurns)
+    {
+        // After 2+ user turns in guided → advance to ready check
+        if (userTurns >= 2)
+        {
+            var readyText =
+                $"ขอบคุณที่แชร์ความคิดนะคะ {n} 😊\n\n" +
+                "ตอนนี้รู้สึกว่าพร้อมลองอธิบายแนวคิดนี้ด้วยคำของตัวเองแล้วไหมคะ?\n" +
+                "หรืออยากให้ยกตัวอย่างเพิ่มเติมก่อนก็ได้นะคะ";
+            return new ProjectBrainResponse(readyText, "ready");
+        }
+
+        // Turn 1: concrete examples + analogy to build mental model
+        var guidedText =
+            $"ให้ลองนึกภาพแบบนี้นะคะ {n} 🤔\n\n" +
+            "**ตัวอย่างที่ 1 — ห้องเรียนทั่วไป**\n" +
+            "นักเรียนอ่านสูตรคณิตศาสตร์ได้ จำขั้นตอนได้ ทำข้อสอบผ่าน\n" +
+            "แต่พอถามว่า 'ทำไมถึงต้องคูณตรงนี้?' — ตอบไม่ได้\n\n" +
+            "**ตัวอย่างที่ 2 — AI Tutor ตัวนี้**\n" +
+            "แทนที่จะแค่ให้คำตอบถูก\n" +
+            "ระบบถามว่า 'คิดว่าทำไมถึงได้คำตอบนี้?'\n" +
+            "เพราะการอธิบายเหตุผลคือหลักฐานว่าเข้าใจจริง — ไม่ใช่แค่จำได้\n\n" +
+            "───────────────────────\n" +
+            "ลองนึกดูนะคะ — ในประสบการณ์ของคุณ\n" +
+            "เคยเจอสถานการณ์ที่ 'รู้' แต่ 'ไม่เข้าใจจริง' ไหมคะ?";
+
+        return new ProjectBrainResponse(guidedText, "guided");
+    }
+
+    private static ProjectBrainResponse HandleReady(string n, string msg)
+    {
+        // Always advance to check — 1 turn only, don't block the flow
+        var text =
+            $"เยี่ยมเลยค่ะ {n} 😊\n\n" +
+            "ตอนนี้ลองอธิบายด้วยคำของตัวเองได้เลยนะคะ —\n" +
+            "**Understanding Engine คืออะไร ในความเข้าใจของคุณ?**\n\n" +
+            "ไม่ต้องสมบูรณ์แบบค่ะ แค่บอกตามที่เข้าใจตอนนี้ได้เลย";
+
         return new ProjectBrainResponse(text, "check");
     }
 
