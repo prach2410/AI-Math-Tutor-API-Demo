@@ -10,6 +10,19 @@ public class ProjectBrainController(
     ProjectBrainTutorService service,
     ProjectBrainEvidenceService evidenceService) : ControllerBase
 {
+    [HttpGet("topics")]
+    public ActionResult GetTopics()
+    {
+        var topics = KnowledgeCurriculum.Topics.Select(t => new
+        {
+            t.Id,
+            t.Title,
+            t.Emoji,
+            t.Subtitle,
+        });
+        return Ok(topics);
+    }
+
     [HttpPost("chat")]
     public ActionResult<ProjectBrainResponse> Chat([FromBody] ProjectBrainRequest request)
     {

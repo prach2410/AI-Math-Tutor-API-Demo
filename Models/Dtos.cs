@@ -63,7 +63,8 @@ public record ProjectBrainRequest(
     string Message,
     string Phase,
     string? StudentName = null,
-    string? PriorEvidenceSummary = null
+    string? PriorEvidenceSummary = null,
+    string? TopicId = null
 );
 
 public record EvidenceItem(
