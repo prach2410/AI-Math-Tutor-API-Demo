@@ -27,7 +27,21 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+
+    // Ensure new tables added after initial DB creation exist
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS ProjectBrainEvidence (
+            Id          TEXT NOT NULL PRIMARY KEY,
+            SessionId   TEXT NOT NULL,
+            StudentId   TEXT,
+            Topic       TEXT NOT NULL,
+            CreatedAt   TEXT NOT NULL,
+            EvidenceJson TEXT NOT NULL,
+            SummaryJson  TEXT NOT NULL
+        );
+        """);
 }
 
 app.UseCors();
