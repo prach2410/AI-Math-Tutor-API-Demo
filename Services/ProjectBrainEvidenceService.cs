@@ -44,6 +44,46 @@ public class ProjectBrainEvidenceService(AppDbContext db)
             .ToListAsync();
     }
 
+    public async Task<string?> GetRecentSummaryAsync(string studentId, int limit = 3)
+    {
+        var sessions = await db.ProjectBrainEvidence
+            .Where(e => e.StudentId == studentId)
+            .OrderByDescending(e => e.CreatedAt)
+            .Take(limit)
+            .ToListAsync();
+
+        if (sessions.Count == 0) return null;
+
+        var lines = new List<string>();
+
+        foreach (var s in sessions)
+        {
+            try
+            {
+                var summary = JsonSerializer.Deserialize<EvidenceSummary>(s.SummaryJson, JsonOpts);
+                if (summary is null) continue;
+
+                if (summary.StrongEvidence.Count > 0)
+                {
+                    lines.Add("✓ Strong:");
+                    lines.AddRange(summary.StrongEvidence.Take(3).Select(e => $"  • {TruncateStatement(e)}"));
+                }
+
+                if (summary.OpenQuestions.Count > 0)
+                {
+                    lines.Add("? Questions:");
+                    lines.AddRange(summary.OpenQuestions.Take(2).Select(q => $"  • {TruncateStatement(q)}"));
+                }
+            }
+            catch { /* skip malformed JSON */ }
+        }
+
+        return lines.Count > 0 ? string.Join("\n", lines) : null;
+    }
+
+    private static string TruncateStatement(string s) =>
+        s.Length > 60 ? s[..60] + "…" : s;
+
     private static string FormatItem(EvidenceItem i) =>
         $"[{i.EvidenceType}] {i.UserStatement}";
 }

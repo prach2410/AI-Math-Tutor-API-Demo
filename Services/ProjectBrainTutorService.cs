@@ -27,9 +27,9 @@ public class ProjectBrainTutorService
         var phase     = req.Phase;
         var userTurns = req.History.Count(h => h.Role == "user");
 
-        // Extract evidence from user message (skip teach phase — it's the AI talking)
+        // Extract evidence from user message (skip teach/retrieval — AI is talking)
         List<EvidenceItem>? evidence = null;
-        if (phase != "teach" && msg != "เริ่ม")
+        if (phase != "teach" && phase != "retrieval" && msg != "เริ่ม")
             evidence = ExtractEvidence(msg);
 
         // Explicit summary request any time
@@ -38,51 +38,15 @@ public class ProjectBrainTutorService
 
         var baseResponse = phase switch
         {
-            "teach"   => HandleTeach(n),
-            "reflect" => HandleReflect(n, msg),
-            "grill"   => HandleGrill(n, msg, userTurns),
-            _         => HandleTeach(n),
+            "teach"     => HandleTeach(n),
+            "retrieval" => HandleRetrieval(n, req.PriorEvidenceSummary ?? ""),
+            "check"     => HandleCheck(n, msg, evidence, userTurns),
+            "reflect"   => HandleReflect(n, msg),
+            "grill"     => HandleGrill(n, msg, userTurns),
+            _           => HandleTeach(n),
         };
 
-        // Attach evidence to response
         return baseResponse with { Evidence = evidence };
-    }
-
-    // ── Evidence extraction ──────────────────────────────────────────────────
-
-    private static List<EvidenceItem> ExtractEvidence(string msg)
-    {
-        var items = new List<EvidenceItem>();
-
-        TryAdd(items, msg, "Explain", ExplainWords,
-            "ผู้ใช้อธิบายแนวคิดด้วยคำของตัวเอง");
-        TryAdd(items, msg, "Reason", ReasonWords,
-            "ผู้ใช้ให้เหตุผลหรืออธิบายที่มาของความคิด");
-        TryAdd(items, msg, "Apply", ApplyWords,
-            "ผู้ใช้นำแนวคิดไปใช้กับตัวอย่างหรือสถานการณ์จริง");
-        TryAdd(items, msg, "Connect", ConnectWords,
-            "ผู้ใช้เชื่อมโยงแนวคิดกับความรู้หรือประสบการณ์อื่น");
-        TryAdd(items, msg, "Reflect", ReflectWords,
-            "ผู้ใช้สะท้อนความคิดหรือแสดงความไม่แน่ใจ");
-        TryAdd(items, msg, "Question", QuestionWords,
-            "ผู้ใช้ตั้งคำถามเพิ่มเติม");
-
-        return items;
-    }
-
-    private static void TryAdd(List<EvidenceItem> items, string msg,
-        string evidenceType, string[] keywords, string interpretation)
-    {
-        var matchCount = keywords.Count(k => msg.Contains(k, StringComparison.OrdinalIgnoreCase));
-        if (matchCount == 0) return;
-
-        double confidence = matchCount >= 2 ? 0.9 : 0.7;
-        items.Add(new EvidenceItem(
-            EvidenceType:      evidenceType,
-            UserStatement:     msg,
-            AiInterpretation:  interpretation,
-            Confidence:        confidence
-        ));
     }
 
     // ── Phase handlers ───────────────────────────────────────────────────────
@@ -105,10 +69,70 @@ public class ProjectBrainTutorService
             "ผ่านการสนทนา การสะท้อนความคิด และการให้เหตุผล\n" +
             "───────────────────────\n\n" +
             "อ่านจบแล้วนะคะ 🙂\n" +
-            "ลองอธิบายให้ฟังด้วยคำของตัวเองได้เลยค่ะ —\n" +
-            "ตามที่เข้าใจตอนนี้ ไม่ต้องสมบูรณ์แบบ";
+            "ลองอธิบายให้ฟังได้เลยค่ะ —\n" +
+            "Understanding Engine คืออะไร ในความเข้าใจของคุณ?";
 
-        return new ProjectBrainResponse(text, "reflect");
+        // ← changed: now advances to "check" instead of "reflect"
+        return new ProjectBrainResponse(text, "check");
+    }
+
+    private static ProjectBrainResponse HandleRetrieval(string n, string priorSummary)
+    {
+        var summaryBlock = string.IsNullOrWhiteSpace(priorSummary)
+            ? "— (ยังไม่มีข้อมูลจากครั้งก่อน)"
+            : priorSummary;
+
+        var text =
+            $"ยินดีต้อนรับกลับนะคะ {n} 😊\n\n" +
+            "ครั้งที่แล้วเราคุยกันเรื่อง Understanding Engine\n" +
+            "นี่คือสิ่งที่เหลืออยู่จากการสนทนาครั้งก่อน:\n\n" +
+            $"{summaryBlock}\n\n" +
+            "วันนี้ยังเห็นด้วยกับสิ่งเหล่านี้อยู่ไหมคะ?\n" +
+            "หรืออยากเพิ่มเติมหรือเปลี่ยนใจอะไรก็ได้เลย 😊";
+
+        // Skip teach for returning users — go straight to check
+        return new ProjectBrainResponse(text, "check");
+    }
+
+    private static ProjectBrainResponse HandleCheck(string n, string msg,
+        List<EvidenceItem>? evidence, int userTurns)
+    {
+        bool hasExplain = evidence?.Any(e => e.EvidenceType == "Explain") ?? false;
+
+        // Success: Explain evidence found → advance to reflect
+        if (hasExplain)
+        {
+            var successText =
+                $"ดีมากเลยค่ะ {n} 👏\n" +
+                "คุณอธิบายได้ชัดเจนมาก — นั่นแสดงว่าเข้าใจแนวคิดแล้ว\n\n" +
+                "มาลองคิดให้ลึกขึ้นอีกหน่อยนะคะ\n\n" +
+                GrillQuestions[0].Replace("ลองนึกภาพดูนะคะ",
+                    "ถาม Reflection สักข้อนะคะ\n\nลองนึกภาพดูนะคะ");
+
+            return new ProjectBrainResponse(successText, "reflect");
+        }
+
+        // Graceful degradation: 2+ turns without Explain → advance anyway
+        if (userTurns >= 2)
+        {
+            var fallbackText =
+                $"ขอบคุณนะคะ {n} 😊\n" +
+                "ไม่เป็นไรเลย — บางแนวคิดต้องใช้เวลาในการตกผลึก\n\n" +
+                "มาลองดูกันต่อนะคะ ขอถามสถานการณ์จริงสักข้อ\n\n" +
+                GrillQuestions[0];
+
+            return new ProjectBrainResponse(fallbackText, "reflect");
+        }
+
+        // Stay in check: provide clarification + re-ask
+        var clarifyText =
+            $"ไม่เป็นไรเลยนะคะ 🙂\n\n" +
+            "ลองคิดแบบนี้ก็ได้ —\n" +
+            "ถ้าเพื่อนถามว่า 'AI Tutor นี้ต่างจาก Google ยังไง?'\n" +
+            "คุณจะตอบว่าอะไร?\n\n" +
+            "ไม่ต้องสมบูรณ์แบบค่ะ แค่บอกตามที่คิดได้เลย";
+
+        return new ProjectBrainResponse(clarifyText, "check");
     }
 
     private static ProjectBrainResponse HandleReflect(string n, string msg)
@@ -164,16 +188,34 @@ public class ProjectBrainTutorService
         return new ProjectBrainResponse(text, "grill");
     }
 
+    // ── Evidence extraction ──────────────────────────────────────────────────
+
+    private static List<EvidenceItem> ExtractEvidence(string msg)
+    {
+        var items = new List<EvidenceItem>();
+        TryAdd(items, msg, "Explain", ExplainWords,  "ผู้ใช้อธิบายแนวคิดด้วยคำของตัวเอง");
+        TryAdd(items, msg, "Reason",  ReasonWords,   "ผู้ใช้ให้เหตุผลหรืออธิบายที่มาของความคิด");
+        TryAdd(items, msg, "Apply",   ApplyWords,    "ผู้ใช้นำแนวคิดไปใช้กับตัวอย่างหรือสถานการณ์จริง");
+        TryAdd(items, msg, "Connect", ConnectWords,  "ผู้ใช้เชื่อมโยงแนวคิดกับความรู้หรือประสบการณ์อื่น");
+        TryAdd(items, msg, "Reflect", ReflectWords,  "ผู้ใช้สะท้อนความคิดหรือแสดงความไม่แน่ใจ");
+        TryAdd(items, msg, "Question", QuestionWords, "ผู้ใช้ตั้งคำถามเพิ่มเติม");
+        return items;
+    }
+
+    private static void TryAdd(List<EvidenceItem> items, string msg,
+        string evidenceType, string[] keywords, string interpretation)
+    {
+        var matchCount = keywords.Count(k => msg.Contains(k, StringComparison.OrdinalIgnoreCase));
+        if (matchCount == 0) return;
+        double confidence = matchCount >= 2 ? 0.9 : 0.7;
+        items.Add(new EvidenceItem(evidenceType, msg, interpretation, confidence));
+    }
+
     // ── Summary ──────────────────────────────────────────────────────────────
 
     private static string BuildSummary(List<ProjectBrainMessage> history, string n)
     {
-        var userMessages = history
-            .Where(h => h.Role == "user")
-            .Select(h => h.Text)
-            .ToList();
-
-        var allText = string.Join(" ", userMessages);
+        var allText = string.Join(" ", history.Where(h => h.Role == "user").Select(h => h.Text));
 
         var evidence = new List<string>();
         if (Contains(allText, ExplainWords))  evidence.Add("✓ Explain — อธิบายแนวคิดด้วยคำของตัวเองได้");
@@ -187,7 +229,7 @@ public class ProjectBrainTutorService
             : "ยังไม่พบหลักฐานความเข้าใจที่ชัดเจน — ลองคุยต่อได้นะคะ";
 
         bool hasOpenQ = Contains(allText, ReflectWords) ||
-                        Contains(allText, new[] { "ยังไม่", "ไม่แน่", "อาจ", "สงสัย" });
+                        Contains(allText, ["ยังไม่", "ไม่แน่", "อาจ", "สงสัย"]);
 
         var openQ = hasOpenQ
             ? "? วิธีสังเกตความเข้าใจในระยะยาว"

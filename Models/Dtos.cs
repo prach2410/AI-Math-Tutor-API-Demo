@@ -62,7 +62,8 @@ public record ProjectBrainRequest(
     List<ProjectBrainMessage> History,
     string Message,
     string Phase,
-    string? StudentName = null
+    string? StudentName = null,
+    string? PriorEvidenceSummary = null
 );
 
 public record EvidenceItem(
