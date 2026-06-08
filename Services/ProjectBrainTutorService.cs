@@ -50,15 +50,17 @@ public class ProjectBrainTutorService
 
     private static ProjectBrainResponse HandleTeach(string n, CurriculumTopic topic)
     {
+        var passiveGrillSuffix = !string.IsNullOrWhiteSpace(topic.PassiveGrill)
+            ? $"\n\n───────────────────────\n{topic.PassiveGrill}\n\nพอเริ่มเห็นภาพไหมคะ 😊"
+            : "\n\nพอเริ่มเห็นภาพไหมคะ 😊";
+
         var text =
             $"สวัสดีนะคะ {n} 😊\n\n" +
             $"วันนี้เราจะคุยกันเรื่อง **{topic.Title}**\n\n" +
             "───────────────────────\n" +
             $"{topic.KnowledgeContent}\n" +
-            "───────────────────────\n\n" +
-            "อ่านจบแล้วนะคะ 🙂\n" +
-            "ลองอธิบายให้ฟังได้เลยค่ะ —\n" +
-            $"**{topic.Title} คืออะไร ในความเข้าใจของคุณ?**";
+            "───────────────────────" +
+            passiveGrillSuffix;
 
         return new ProjectBrainResponse(text, "guided");
     }
@@ -82,14 +84,41 @@ public class ProjectBrainTutorService
 
     private static ProjectBrainResponse HandleGuided(string n, string msg, int userTurns, CurriculumTopic topic)
     {
-        // After 2+ user turns in guided → advance to ready check
+        string[] readyKeywords    = ["เริ่มเห็น", "เห็นภาพ", "โอเค", "พร้อม"];
+        string[] confusedKeywords = ["ยังงง", "งง", "ไม่เข้าใจ", "ไม่เห็นภาพ"];
+
+        if (Contains(msg, readyKeywords))
+        {
+            return new ProjectBrainResponse(
+                $"ดีมากเลยค่ะ {n} 😊\n\n" +
+                "ลองอธิบายด้วยคำของตัวเองได้เลยนะคะ —\n" +
+                $"**{topic.Title} คืออะไร ในความเข้าใจของคุณ?**\n\n" +
+                "ไม่ต้องสมบูรณ์แบบค่ะ แค่บอกตามที่เข้าใจตอนนี้ได้เลย",
+                "check"
+            );
+        }
+
+        if (Contains(msg, confusedKeywords))
+        {
+            var pg = !string.IsNullOrWhiteSpace(topic.PassiveGrill)
+                ? topic.PassiveGrill
+                : (topic.GuidedExamples.Length > 0 ? topic.GuidedExamples[0] : "");
+            return new ProjectBrainResponse(
+                $"ไม่เป็นไรเลยนะคะ {n} 😊\n\n" +
+                (pg.Length > 0 ? $"{pg}\n\n" : "") +
+                "พอเริ่มเห็นภาพไหมคะ 😊",
+                "guided"
+            );
+        }
+
         if (userTurns >= 2)
         {
-            var readyText =
+            return new ProjectBrainResponse(
                 $"ขอบคุณที่แชร์ความคิดนะคะ {n} 😊\n\n" +
                 "ตอนนี้รู้สึกว่าพร้อมลองอธิบายแนวคิดนี้ด้วยคำของตัวเองแล้วไหมคะ?\n" +
-                "หรืออยากให้ยกตัวอย่างเพิ่มเติมก่อนก็ได้นะคะ";
-            return new ProjectBrainResponse(readyText, "ready");
+                "หรืออยากให้ยกตัวอย่างเพิ่มเติมก่อนก็ได้นะคะ",
+                "ready"
+            );
         }
 
         var guidedText = topic.GuidedExamples.Length > 0
