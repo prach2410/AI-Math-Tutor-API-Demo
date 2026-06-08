@@ -10,5 +10,6 @@ public record LearningStep(
     string WorkedExample,
     bool IsLast,
     string? TeachingMoment = null,
-    string? TechniqueType = null
+    string? TechniqueType = null,
+    string? PassiveGrill = null
 );

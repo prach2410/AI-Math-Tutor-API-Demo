@@ -6,7 +6,8 @@ public record StartResponse(
     int TotalSteps,
     string Question,
     bool IsLast,
-    List<string> RealWorldUses
+    List<string> RealWorldUses,
+    string? PassiveGrill = null
 );
 
 public record AssistResponse(string Message);
@@ -39,7 +40,8 @@ public record NextStepDto(
     int StepNumber,
     int TotalSteps,
     string Question,
-    bool IsLast
+    bool IsLast,
+    string? PassiveGrill = null
 );
 
 public record FreeTalkMessage(string Role, string Content);

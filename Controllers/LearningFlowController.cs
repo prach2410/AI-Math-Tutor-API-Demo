@@ -21,7 +21,8 @@ public class LearningFlowController(LearningFlowService service) : ControllerBas
             TotalSteps: first.TotalSteps,
             Question: service.PersonalizeQuestion(first.Question, name),
             IsLast: first.IsLast,
-            RealWorldUses: scenario.RealWorldUses
+            RealWorldUses: scenario.RealWorldUses,
+            PassiveGrill: first.PassiveGrill
         ));
     }
 
