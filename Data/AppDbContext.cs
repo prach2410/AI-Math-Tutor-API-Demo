@@ -8,11 +8,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<LearningSessionEntity> LearningSessions => Set<LearningSessionEntity>();
     public DbSet<DiscoveryBatchEntity> DiscoveryBatches => Set<DiscoveryBatchEntity>();
     public DbSet<ProjectBrainEvidenceEntity> ProjectBrainEvidence => Set<ProjectBrainEvidenceEntity>();
+    public DbSet<HomeworkReadEntity> HomeworkReads => Set<HomeworkReadEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<LearningSessionEntity>().HasKey(e => e.SessionId);
         modelBuilder.Entity<DiscoveryBatchEntity>().HasKey(e => e.BatchId);
         modelBuilder.Entity<ProjectBrainEvidenceEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<HomeworkReadEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<HomeworkReadEntity>().Property(e => e.Id).ValueGeneratedOnAdd();
     }
 }

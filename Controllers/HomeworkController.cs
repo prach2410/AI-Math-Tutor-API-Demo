@@ -1,3 +1,4 @@
+using System.Text;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -51,19 +52,23 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
 
     // ⚠️ ไม่มี auth + เก็บข้อมูลโจทย์ → demo/test เท่านั้น ปิดก่อนเปิดให้นักเรียนจริง
     [HttpGet("debug")]
-    public IActionResult Debug()
+    public async Task<IActionResult> Debug()
     {
-        var entries = HomeworkDebugLog.Recent();
-        var rows = string.Join("", entries.Select(e => $@"
+        var entries = await service.GetRecentAsync(50);
+        var rows = string.Join("", entries.Select(e =>
+        {
+            var bkk = DateTimeOffset.Parse(e.CreatedAt).ToOffset(TimeSpan.FromHours(7));
+            return $@"
             <tr>
-              <td style=""text-align:center;font-weight:600"">#{e.Seq}</td>
-              <td>{e.At:HH:mm:ss}</td>
+              <td style=""text-align:center;font-weight:600"">#{e.Id}</td>
+              <td>{bkk:HH:mm:ss}</td>
               <td style=""text-align:center"">{(e.Readable ? "✅" : "❌")}</td>
-              <td><code>{System.Net.WebUtility.HtmlEncode(e.Reason)}</code></td>
-              <td style=""color:#64748b;font-size:12px"">{System.Net.WebUtility.HtmlEncode(e.FileName)}</td>
-              <td>{System.Net.WebUtility.HtmlEncode(e.ProblemText)}</td>
-              <td><pre>{System.Net.WebUtility.HtmlEncode(e.RawResponse)}</pre></td>
-            </tr>"));
+              <td><code>{HtmlEncode(e.Reason)}</code></td>
+              <td style=""color:#64748b;font-size:12px"">{HtmlEncode(e.Filename)}</td>
+              <td>{HtmlEncode(e.ProblemText)}</td>
+              <td><pre>{HtmlEncode(e.RawResponse)}</pre></td>
+            </tr>";
+        }));
 
         var html = $@"<!doctype html><html lang=""th""><head><meta charset=""utf-8"">
           <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
@@ -72,6 +77,9 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
             body{{font-family:system-ui,sans-serif;padding:16px;background:#fafafa}}
             h2{{margin:0 0 4px}}
             p{{margin:0 0 12px;color:#666;font-size:13px}}
+            .toolbar{{margin-bottom:12px}}
+            a.btn{{display:inline-block;padding:8px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600}}
+            a.btn:hover{{background:#1d4ed8}}
             table{{border-collapse:collapse;width:100%;background:#fff}}
             td,th{{border:1px solid #ddd;padding:8px;vertical-align:top;font-size:13px;text-align:left}}
             th{{background:#f0f0f0}}
@@ -80,11 +88,54 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
           </style></head><body>
           <h2>ผลการอ่านโจทย์ล่าสุด ({entries.Count}) — เวลา BKK (UTC+7)</h2>
           <p>reason: <code>ok</code> อ่านได้ · <code>model_unreadable</code> model บอกอ่านไม่ออก · <code>parse_error</code> parse JSON พัง (บั๊ก) · <code>api_error_*</code> API ขัดข้อง</p>
+          <div class=""toolbar"">
+            <a class=""btn"" href=""/api/homework/export"">⬇ Export CSV</a>
+          </div>
           <table>
             <tr><th>#</th><th>เวลา</th><th>อ่านได้</th><th>reason</th><th>ชื่อไฟล์</th><th>problemText</th><th>raw response</th></tr>
             {rows}
           </table></body></html>";
 
         return Content(html, "text/html");
+    }
+
+    // ⚠️ ไม่มี auth → demo/test เท่านั้น
+    [HttpGet("export")]
+    public async Task<IActionResult> Export()
+    {
+        var entries = await service.GetAllAsync();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("seq,เวลา (BKK),readable,reason,topic,problemText");
+
+        foreach (var e in entries)
+        {
+            var bkk = DateTimeOffset.Parse(e.CreatedAt).ToOffset(TimeSpan.FromHours(7));
+            sb.AppendLine(string.Join(",",
+                e.Id.ToString(),
+                CsvQuote(bkk.ToString("yyyy-MM-dd HH:mm:ss")),
+                e.Readable ? "true" : "false",
+                CsvQuote(e.Reason),
+                CsvQuote(e.Topic),
+                CsvQuote(e.ProblemText)
+            ));
+        }
+
+        // UTF-8 BOM ให้ Excel เปิดภาษาไทยออก
+        var bom = new byte[] { 0xEF, 0xBB, 0xBF };
+        var body = Encoding.UTF8.GetBytes(sb.ToString());
+        var bytes = bom.Concat(body).ToArray();
+
+        var filename = $"homework_reads_{DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7)):yyyy-MM-dd}.csv";
+        return File(bytes, "text/csv; charset=utf-8", filename);
+    }
+
+    private static string HtmlEncode(string s) => System.Net.WebUtility.HtmlEncode(s);
+
+    private static string CsvQuote(string value)
+    {
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+            return '"' + value.Replace("\"", "\"\"") + '"';
+        return value;
     }
 }

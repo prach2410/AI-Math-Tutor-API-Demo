@@ -1,5 +1,8 @@
 using System.Text;
 using System.Text.Json;
+using backend.Data;
+using backend.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
 
@@ -11,29 +14,48 @@ public record HomeworkAnalysisResult(
     string Message
 );
 
-public interface IHomeworkAnalyzer
+internal interface IHomeworkAnalyzer
 {
-    Task<HomeworkAnalysisResult> AnalyzeAsync(
+    Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
         string fileName = "");
 }
 
-public class HomeworkAnalysisService
+public class HomeworkAnalysisService(AppDbContext db)
 {
-    private readonly IHomeworkAnalyzer _analyzer;
-
-    public HomeworkAnalysisService()
-    {
-        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-        _analyzer = string.IsNullOrWhiteSpace(apiKey)
+    // Static so one instance is shared across scoped service instances (HttpClient reuse, one-time env check)
+    private static readonly IHomeworkAnalyzer Analyzer =
+        string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"))
             ? new MockHomeworkAnalyzer()
-            : new ClaudeHomeworkAnalyzer(apiKey);
-    }
+            : new ClaudeHomeworkAnalyzer(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!);
 
-    public Task<HomeworkAnalysisResult> AnalyzeAsync(
+    public async Task<HomeworkAnalysisResult> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
         string fileName = "")
-        => _analyzer.AnalyzeAsync(images, fileName);
+    {
+        var (result, reason, rawResponse) = await Analyzer.AnalyzeAsync(images, fileName);
+
+        db.HomeworkReads.Add(new HomeworkReadEntity
+        {
+            Filename    = fileName,
+            CreatedAt   = DateTime.UtcNow.ToString("O"),
+            Readable    = result.Readable,
+            Reason      = reason,
+            ProblemText = result.ProblemText,
+            Latex       = result.Latex,
+            Topic       = result.Topic,
+            RawResponse = rawResponse,
+        });
+        await db.SaveChangesAsync();
+
+        return result;
+    }
+
+    public Task<List<HomeworkReadEntity>> GetRecentAsync(int limit = 50)
+        => db.HomeworkReads.OrderByDescending(e => e.Id).Take(limit).ToListAsync();
+
+    public Task<List<HomeworkReadEntity>> GetAllAsync()
+        => db.HomeworkReads.OrderBy(e => e.Id).ToListAsync();
 }
 
 internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
@@ -73,7 +95,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
 
     public ClaudeHomeworkAnalyzer(string apiKey) => _apiKey = apiKey;
 
-    public async Task<HomeworkAnalysisResult> AnalyzeAsync(
+    public async Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
         string fileName = "")
     {
@@ -110,24 +132,20 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
 
             if (!response.IsSuccessStatusCode)
             {
-                HomeworkDebugLog.Add(new HomeworkDebugEntry(
-                    BkkNow(), false, $"api_error_{(int)response.StatusCode}", "", raw, fileName));
-                return new HomeworkAnalysisResult("", "", "", false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+                var errResult = new HomeworkAnalysisResult("", "", "", false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+                return (errResult, $"api_error_{(int)response.StatusCode}", raw);
             }
 
             using var doc = JsonDocument.Parse(raw);
             var text = doc.RootElement.GetProperty("content")[0].GetProperty("text").GetString() ?? "";
 
             var (result, reason) = ParseResult(text);
-            HomeworkDebugLog.Add(new HomeworkDebugEntry(
-                BkkNow(), result.Readable, reason, result.ProblemText, text, fileName));
-            return result;
+            return (result, reason, text);
         }
         catch (Exception ex)
         {
-            HomeworkDebugLog.Add(new HomeworkDebugEntry(
-                BkkNow(), false, "exception: " + ex.Message, "", raw, fileName));
-            return new HomeworkAnalysisResult("", "", "", false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+            var errResult = new HomeworkAnalysisResult("", "", "", false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+            return (errResult, "exception: " + ex.Message, raw);
         }
     }
 
@@ -168,14 +186,11 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         var end   = text.LastIndexOf("```");
         return end > start ? text[start..end].Trim() : text;
     }
-
-    private static DateTimeOffset BkkNow()
-        => DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7));
 }
 
 internal class MockHomeworkAnalyzer : IHomeworkAnalyzer
 {
-    public Task<HomeworkAnalysisResult> AnalyzeAsync(
+    public Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
         string fileName = "")
     {
@@ -187,39 +202,6 @@ internal class MockHomeworkAnalyzer : IHomeworkAnalyzer
             Readable:    true,
             Message:     "อ่านโจทย์ได้"
         );
-        HomeworkDebugLog.Add(new HomeworkDebugEntry(
-            DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7)),
-            true, label, result.ProblemText, "(mock provider — ไม่ได้ยิง API จริง)", fileName));
-        return Task.FromResult(result);
-    }
-}
-
-// เก็บผลการอ่านล่าสุดไว้ใน memory (ล่าสุด 20 รายการ) — demo/test เท่านั้น
-public record HomeworkDebugEntry(
-    DateTimeOffset At, bool Readable, string Reason,
-    string ProblemText, string RawResponse, string FileName = "")
-{
-    public int Seq { get; init; }
-}
-
-public static class HomeworkDebugLog
-{
-    private static readonly LinkedList<HomeworkDebugEntry> Entries = new();
-    private static readonly object Lock = new();
-    private static int _nextSeq = 1;
-    private const int Max = 20;
-
-    public static void Add(HomeworkDebugEntry entry)
-    {
-        lock (Lock)
-        {
-            Entries.AddFirst(entry with { Seq = _nextSeq++ });
-            while (Entries.Count > Max) Entries.RemoveLast();
-        }
-    }
-
-    public static IReadOnlyList<HomeworkDebugEntry> Recent()
-    {
-        lock (Lock) { return Entries.ToList(); }
+        return Task.FromResult((result, label, "(mock provider — ไม่ได้ยิง API จริง)"));
     }
 }

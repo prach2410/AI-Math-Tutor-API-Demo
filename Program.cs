@@ -8,7 +8,7 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<LearningFlowService>();
 builder.Services.AddSingleton<FreeTalkService>();
 builder.Services.AddSingleton<ProjectBrainTutorService>();
-builder.Services.AddSingleton<HomeworkAnalysisService>();
+builder.Services.AddScoped<HomeworkAnalysisService>();
 builder.Services.AddScoped<ProjectBrainEvidenceService>();
 
 var dbPath = builder.Configuration.GetValue<string>("DatabasePath") ?? "learning_sessions.db";
@@ -41,6 +41,20 @@ using (var scope = app.Services.CreateScope())
             CreatedAt   TEXT NOT NULL,
             EvidenceJson TEXT NOT NULL,
             SummaryJson  TEXT NOT NULL
+        );
+        """);
+
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS HomeworkReads (
+            Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            Filename    TEXT NOT NULL DEFAULT '',
+            CreatedAt   TEXT NOT NULL,
+            Readable    INTEGER NOT NULL DEFAULT 0,
+            Reason      TEXT NOT NULL DEFAULT '',
+            ProblemText TEXT NOT NULL DEFAULT '',
+            Latex       TEXT NOT NULL DEFAULT '',
+            Topic       TEXT NOT NULL DEFAULT '',
+            RawResponse TEXT NOT NULL DEFAULT ''
         );
         """);
 }
