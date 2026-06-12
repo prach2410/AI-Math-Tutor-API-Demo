@@ -68,7 +68,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         var body = new
         {
             model = "claude-opus-4-8",
-            max_tokens = 1024,
+            max_tokens = 2048,
             messages = new[]
             {
                 new
@@ -97,38 +97,71 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         request.Headers.Add("anthropic-version", "2023-06-01");
         request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
-        using var response = await Http.SendAsync(request);
-        response.EnsureSuccessStatusCode();
+        var raw = "";
+        try
+        {
+            using var response = await Http.SendAsync(request);
+            raw = await response.Content.ReadAsStringAsync();
 
-        var responseJson = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(responseJson);
-        var text = doc.RootElement
-            .GetProperty("content")[0]
-            .GetProperty("text")
-            .GetString() ?? "";
+            if (!response.IsSuccessStatusCode)
+            {
+                HomeworkDebugLog.Add(new HomeworkDebugEntry(
+                    DateTime.Now, false, $"api_error_{(int)response.StatusCode}", "", raw));
+                return new HomeworkAnalysisResult("", "", "", false,
+                    "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+            }
 
-        return ParseResult(text);
+            using var doc = JsonDocument.Parse(raw);
+            var text = doc.RootElement
+                .GetProperty("content")[0]
+                .GetProperty("text")
+                .GetString() ?? "";
+
+            var (result, reason) = ParseResult(text);
+            HomeworkDebugLog.Add(new HomeworkDebugEntry(
+                DateTime.Now, result.Readable, reason, result.ProblemText, text));
+            return result;
+        }
+        catch (Exception ex)
+        {
+            HomeworkDebugLog.Add(new HomeworkDebugEntry(
+                DateTime.Now, false, "exception: " + ex.Message, "", raw));
+            return new HomeworkAnalysisResult("", "", "", false,
+                "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+        }
     }
 
-    private static HomeworkAnalysisResult ParseResult(string text)
+    // คืน reason ด้วย เพื่อแยกว่า model บอกอ่านไม่ออก (model_unreadable) หรือ parse JSON พัง (parse_error)
+    private static (HomeworkAnalysisResult result, string reason) ParseResult(string text)
     {
         try
         {
-            var json = StripCodeFence(text.Trim());
+            var json = ExtractJson(text);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            return new HomeworkAnalysisResult(
+            var result = new HomeworkAnalysisResult(
                 ProblemText: root.GetProperty("problemText").GetString() ?? "",
                 Latex:       root.GetProperty("latex").GetString() ?? "",
                 Topic:       root.GetProperty("topic").GetString() ?? "",
                 Readable:    root.GetProperty("readable").GetBoolean(),
                 Message:     root.GetProperty("message").GetString() ?? ""
             );
+            return (result, result.Readable ? "ok" : "model_unreadable");
         }
         catch
         {
-            return new HomeworkAnalysisResult("", "", "", false, "อ่านโจทย์ไม่ออก กรุณาลองใหม่");
+            return (new HomeworkAnalysisResult("", "", "", false, "อ่านโจทย์ไม่ออก กรุณาลองใหม่"),
+                "parse_error");
         }
+    }
+
+    // ทนทานขึ้น: ดึงตั้งแต่ { แรกถึง } สุดท้าย เผื่อ model แทรกข้อความนำหน้า/ต่อท้าย JSON
+    private static string ExtractJson(string text)
+    {
+        var t = StripCodeFence(text.Trim());
+        var start = t.IndexOf('{');
+        var end   = t.LastIndexOf('}');
+        return (start >= 0 && end > start) ? t[start..(end + 1)] : t;
     }
 
     private static string StripCodeFence(string text)
@@ -143,11 +176,41 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
 internal class MockHomeworkAnalyzer : IHomeworkAnalyzer
 {
     public Task<HomeworkAnalysisResult> AnalyzeAsync(byte[] imageBytes, string mediaType)
-        => Task.FromResult(new HomeworkAnalysisResult(
+    {
+        var result = new HomeworkAnalysisResult(
             ProblemText: "กล่องพัสดุใบหนึ่งมีความกว้าง x เซนติเมตร ยาวกว่าความกว้าง 5 เซนติเมตร และสูง 3x เซนติเมตร ถ้าปริมาตรของกล่องเท่ากับ 1,200 ลูกบาศก์เซนติเมตร จงหาค่า x",
             Latex:       @"x(x+5)(3x) = 1200",
             Topic:       "สมการพหุนาม",
             Readable:    true,
             Message:     "อ่านโจทย์ได้"
-        ));
+        );
+        HomeworkDebugLog.Add(new HomeworkDebugEntry(
+            DateTime.Now, true, "mock", result.ProblemText, "(mock provider — ไม่ได้ยิง API จริง)"));
+        return Task.FromResult(result);
+    }
+}
+
+// เก็บผลการอ่านล่าสุดไว้ใน memory (ล่าสุด 20 รายการ) สำหรับหน้า debug — demo/test เท่านั้น
+public record HomeworkDebugEntry(
+    DateTime At, bool Readable, string Reason, string ProblemText, string RawResponse);
+
+public static class HomeworkDebugLog
+{
+    private static readonly LinkedList<HomeworkDebugEntry> Entries = new();
+    private static readonly object Lock = new();
+    private const int Max = 20;
+
+    public static void Add(HomeworkDebugEntry entry)
+    {
+        lock (Lock)
+        {
+            Entries.AddFirst(entry);
+            while (Entries.Count > Max) Entries.RemoveLast();
+        }
+    }
+
+    public static IReadOnlyList<HomeworkDebugEntry> Recent()
+    {
+        lock (Lock) { return Entries.ToList(); }
+    }
 }
