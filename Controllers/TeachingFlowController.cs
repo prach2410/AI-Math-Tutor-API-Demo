@@ -9,6 +9,7 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
 {
     public record StartRequest(string ProblemText, string Latex, string Topic, bool HasFigure);
     public record AnswerRequest(string Answer);
+    public record HintRequest(int Level);
 
     [HttpPost("start")]
     public async Task<IActionResult> Start([FromBody] StartRequest req)
@@ -47,6 +48,8 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
             return Ok(new
             {
                 verdict      = result.Verdict,
+                reason       = result.Reason,
+                missing      = result.Missing,
                 encouragement = result.Encouragement,
                 nextStep     = result.NextStep is null ? null : new
                 {
@@ -65,6 +68,24 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
         catch (Exception ex)
         {
             return StatusCode(500, new { error = "เกิดข้อผิดพลาด กรุณาลองใหม่", detail = ex.Message });
+        }
+    }
+
+    [HttpPost("{sessionId}/hint")]
+    public async Task<IActionResult> Hint(string sessionId, [FromBody] HintRequest req)
+    {
+        try
+        {
+            var result = await service.HintAsync(sessionId, req.Level);
+            return Ok(new { level = result.Level, help = result.Help });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(new { error = "ไม่พบ session นี้" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "ขอความช่วยเหลือไม่สำเร็จ กรุณาลองใหม่", detail = ex.Message });
         }
     }
 }

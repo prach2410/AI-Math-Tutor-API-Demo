@@ -49,7 +49,18 @@ public class MockChatProvider : IChatProvider
 {
     public Task<string> CompleteAsync(string prompt)
     {
-        var json = """
+        // mock แยกชนิด prompt จาก keyword เพื่อให้ flow ทำงานครบโดยไม่ยิง API
+        if (prompt.Contains("\"verdict\""))
+            return Task.FromResult("""
+                { "verdict": "correct", "reason": "คำตอบสอดคล้องกับเป้าหมายของขั้นนี้", "missing": "", "encouragement": "เยี่ยมมาก คิดได้ดีเลย!" }
+                """);
+
+        if (prompt.Contains("ระดับความช่วยเหลือ"))
+            return Task.FromResult("""
+                { "level": 1, "help": "ลองดูว่าโจทย์ให้ข้อมูลอะไรมาบ้าง แล้วเราอยากรู้ค่าอะไร?" }
+                """);
+
+        return Task.FromResult("""
             {
               "steps": [
                 { "step": 1, "goal": "ระบุสิ่งที่โจทย์กำหนดให้", "guidingQuestion": "ลองดูสิว่าโจทย์บอกข้อมูลอะไรมาให้เราบ้าง?", "conceptHint": "อ่านโจทย์ให้ครบก่อนแก้" },
@@ -57,7 +68,6 @@ public class MockChatProvider : IChatProvider
                 { "step": 3, "goal": "แทนค่าและคำนวณคำตอบ", "guidingQuestion": "ลองแทนตัวเลขลงในวิธีที่เลือก แล้วดูว่าได้อะไร?", "conceptHint": "ทำทีละขั้น ไม่ต้องรีบ" }
               ]
             }
-            """;
-        return Task.FromResult(json);
+            """);
     }
 }
