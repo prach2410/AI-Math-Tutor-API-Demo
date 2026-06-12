@@ -11,6 +11,16 @@ builder.Services.AddSingleton<ProjectBrainTutorService>();
 builder.Services.AddScoped<HomeworkAnalysisService>();
 builder.Services.AddScoped<ProjectBrainEvidenceService>();
 
+var anthropicKey = builder.Configuration.GetValue<string>("ANTHROPIC_API_KEY")
+    ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+    ?? "";
+if (string.IsNullOrWhiteSpace(anthropicKey))
+    builder.Services.AddSingleton<IChatProvider, MockChatProvider>();
+else
+    builder.Services.AddSingleton<IChatProvider>(_ => new ClaudeChatProvider(anthropicKey, "claude-sonnet-4-6"));
+
+builder.Services.AddScoped<TeachingFlowService>();
+
 var dbPath = builder.Configuration.GetValue<string>("DatabasePath") ?? "learning_sessions.db";
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite($"Data Source={dbPath}"));
 builder.Services.AddScoped<LearningSessionService>();
@@ -41,6 +51,21 @@ using (var scope = app.Services.CreateScope())
             CreatedAt   TEXT NOT NULL,
             EvidenceJson TEXT NOT NULL,
             SummaryJson  TEXT NOT NULL
+        );
+        """);
+
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS TeachingSessions (
+            Id                 TEXT NOT NULL PRIMARY KEY,
+            ProblemText        TEXT NOT NULL DEFAULT '',
+            Latex              TEXT NOT NULL DEFAULT '',
+            Topic              TEXT NOT NULL DEFAULT '',
+            HasFigure          INTEGER NOT NULL DEFAULT 0,
+            StepsJson          TEXT NOT NULL DEFAULT '[]',
+            CurrentStep        INTEGER NOT NULL DEFAULT 1,
+            Status             TEXT NOT NULL DEFAULT 'in_progress',
+            SolutionShownCount INTEGER NOT NULL DEFAULT 0,
+            CreatedAt          TEXT NOT NULL
         );
         """);
 

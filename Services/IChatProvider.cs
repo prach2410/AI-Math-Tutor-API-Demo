@@ -1,0 +1,63 @@
+using System.Text;
+using System.Text.Json;
+
+namespace backend.Services;
+
+public interface IChatProvider
+{
+    Task<string> CompleteAsync(string prompt);
+}
+
+public class ClaudeChatProvider : IChatProvider
+{
+    private static readonly HttpClient Http = new();
+    private readonly string _apiKey;
+    private readonly string _model;
+
+    public ClaudeChatProvider(string apiKey, string model = "claude-sonnet-4-6")
+    {
+        _apiKey = apiKey;
+        _model  = model;
+    }
+
+    public async Task<string> CompleteAsync(string prompt)
+    {
+        var body = new
+        {
+            model = _model,
+            max_tokens = 2048,
+            messages = new[] { new { role = "user", content = prompt } }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages");
+        request.Headers.Add("x-api-key", _apiKey);
+        request.Headers.Add("anthropic-version", "2023-06-01");
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        using var response = await Http.SendAsync(request);
+        var raw = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Claude API error {(int)response.StatusCode}: {raw}");
+
+        using var doc = JsonDocument.Parse(raw);
+        return doc.RootElement.GetProperty("content")[0].GetProperty("text").GetString() ?? "";
+    }
+}
+
+public class MockChatProvider : IChatProvider
+{
+    public Task<string> CompleteAsync(string prompt)
+    {
+        var json = """
+            {
+              "steps": [
+                { "step": 1, "goal": "ระบุสิ่งที่โจทย์กำหนดให้", "guidingQuestion": "ลองดูสิว่าโจทย์บอกข้อมูลอะไรมาให้เราบ้าง?", "conceptHint": "อ่านโจทย์ให้ครบก่อนแก้" },
+                { "step": 2, "goal": "เลือกวิธีการแก้ที่เหมาะสม", "guidingQuestion": "เรารู้จักวิธีไหนบ้างที่ใช้แก้โจทย์แบบนี้ได้?", "conceptHint": "คิดถึงสูตรหรือแนวคิดที่เรียนมา" },
+                { "step": 3, "goal": "แทนค่าและคำนวณคำตอบ", "guidingQuestion": "ลองแทนตัวเลขลงในวิธีที่เลือก แล้วดูว่าได้อะไร?", "conceptHint": "ทำทีละขั้น ไม่ต้องรีบ" }
+              ]
+            }
+            """;
+        return Task.FromResult(json);
+    }
+}

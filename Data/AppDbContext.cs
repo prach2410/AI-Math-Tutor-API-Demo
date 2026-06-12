@@ -9,6 +9,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DiscoveryBatchEntity> DiscoveryBatches => Set<DiscoveryBatchEntity>();
     public DbSet<ProjectBrainEvidenceEntity> ProjectBrainEvidence => Set<ProjectBrainEvidenceEntity>();
     public DbSet<HomeworkReadEntity> HomeworkReads => Set<HomeworkReadEntity>();
+    public DbSet<TeachingSessionEntity> TeachingSessions => Set<TeachingSessionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -17,5 +18,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<ProjectBrainEvidenceEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<HomeworkReadEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<HomeworkReadEntity>().Property(e => e.Id).ValueGeneratedOnAdd();
+        modelBuilder.Entity<TeachingSessionEntity>().HasKey(e => e.Id);
     }
 }
