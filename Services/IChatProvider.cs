@@ -52,7 +52,7 @@ public class OllamaChatProvider : IChatProvider
     private readonly string _model;
     private readonly string _endpoint;
 
-    public OllamaChatProvider(string apiKey, string model = "qwen3.6:35b",
+    public OllamaChatProvider(string apiKey, string model = "qwen3.6:latest",
         string endpoint = "https://dgx.toptier.co.th/ollama/api/chat")
     {
         _apiKey   = apiKey;

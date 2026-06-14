@@ -24,10 +24,22 @@ internal interface IHomeworkAnalyzer
 public class HomeworkAnalysisService(AppDbContext db)
 {
     // Static so one instance is shared across scoped service instances (HttpClient reuse, one-time env check)
-    private static readonly IHomeworkAnalyzer Analyzer =
-        string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"))
-            ? new MockHomeworkAnalyzer()
-            : new ClaudeHomeworkAnalyzer(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!);
+    private static readonly IHomeworkAnalyzer Analyzer = CreateAnalyzer();
+
+    private static IHomeworkAnalyzer CreateAnalyzer()
+    {
+        var visionProvider = Environment.GetEnvironmentVariable("LLM__VisionProvider") ?? "Claude";
+        if (visionProvider == "LocalAI")
+        {
+            var key = Environment.GetEnvironmentVariable("LLM__LocalAI__ApiKey") ?? "";
+            return new OllamaHomeworkAnalyzer(key);
+        }
+
+        var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
+        if (string.IsNullOrWhiteSpace(anthropicKey))
+            return new MockHomeworkAnalyzer();
+        return new ClaudeHomeworkAnalyzer(anthropicKey);
+    }
 
     public async Task<HomeworkAnalysisResult> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
@@ -64,7 +76,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
     private static readonly HttpClient Http = new();
     private readonly string _apiKey;
 
-    private const string Prompt = """
+    internal const string Prompt = """
         อ่านโจทย์คณิตศาสตร์จากภาพ แล้วตอบเป็น JSON เท่านั้น ห้ามเพิ่มข้อความนอกเหนือจาก JSON
 
         ให้แยกโจทย์ทุกข้อที่พบในภาพออกจากกัน (แยกตามเลขข้อ เช่น 1. 2. 3.)
@@ -150,7 +162,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
             using var doc = JsonDocument.Parse(raw);
             var text = doc.RootElement.GetProperty("content")[0].GetProperty("text").GetString() ?? "";
 
-            var (result, reason) = ParseResult(text);
+            var (result, reason) = HomeworkResponseParser.ParseResult(text);
             return (result, reason, text);
         }
         catch (Exception ex)
@@ -160,7 +172,11 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         }
     }
 
-    private static (HomeworkAnalysisResult result, string reason) ParseResult(string text)
+}
+
+internal static class HomeworkResponseParser
+{
+    internal static (HomeworkAnalysisResult result, string reason) ParseResult(string text)
     {
         try
         {
@@ -200,7 +216,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         }
     }
 
-    private static string ExtractJson(string text)
+    internal static string ExtractJson(string text)
     {
         var t = StripCodeFence(text.Trim());
         var start = t.IndexOf('{');
@@ -214,6 +230,67 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         var start = text.IndexOf('\n') + 1;
         var end   = text.LastIndexOf("```");
         return end > start ? text[start..end].Trim() : text;
+    }
+}
+
+internal class OllamaHomeworkAnalyzer : IHomeworkAnalyzer
+{
+    private static readonly HttpClient Http = new();
+    private readonly string _apiKey;
+    private readonly string _model;
+    private readonly string _endpoint;
+
+    public OllamaHomeworkAnalyzer(string apiKey, string model = "gemma4:26b",
+        string endpoint = "https://dgx.toptier.co.th/ollama/api/chat")
+    {
+        _apiKey   = apiKey;
+        _model    = model;
+        _endpoint = endpoint;
+    }
+
+    public async Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
+        IReadOnlyList<(byte[] Bytes, string MediaType)> images,
+        string fileName = "")
+    {
+        var base64Images = images.Select(img => Convert.ToBase64String(img.Bytes)).ToArray();
+
+        var body = new
+        {
+            model    = _model,
+            messages = new[]
+            {
+                new { role = "user", content = ClaudeHomeworkAnalyzer.Prompt, images = base64Images }
+            },
+            stream = false
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+        request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        var raw = "";
+        try
+        {
+            using var response = await Http.SendAsync(request);
+            raw = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+                return (errResult, $"ollama_error_{(int)response.StatusCode}", raw);
+            }
+
+            using var doc = JsonDocument.Parse(raw);
+            var text = doc.RootElement.GetProperty("message").GetProperty("content").GetString() ?? "";
+
+            var (result, reason) = HomeworkResponseParser.ParseResult(text);
+            return (result, reason, text);
+        }
+        catch (Exception ex)
+        {
+            var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+            return (errResult, "exception: " + ex.Message, raw);
+        }
     }
 }
 
