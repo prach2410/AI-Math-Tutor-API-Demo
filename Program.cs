@@ -65,9 +65,15 @@ using (var scope = app.Services.CreateScope())
             CurrentStep        INTEGER NOT NULL DEFAULT 1,
             Status             TEXT NOT NULL DEFAULT 'in_progress',
             SolutionShownCount INTEGER NOT NULL DEFAULT 0,
+            FigureDescription  TEXT NOT NULL DEFAULT '',
+            FigureCorrection   TEXT NOT NULL DEFAULT '',
             CreatedAt          TEXT NOT NULL
         );
         """);
+
+    // Add columns that may be missing from older DB instances
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN FigureDescription TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN FigureCorrection  TEXT NOT NULL DEFAULT ''"); } catch { }
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS HomeworkReads (

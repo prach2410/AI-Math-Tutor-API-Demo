@@ -7,7 +7,14 @@ namespace backend.Services;
 
 public record TeachingStep(int Step, string Goal, string GuidingQuestion, string ConceptHint);
 
-public record StartTeachingResult(string SessionId, TeachingStep CurrentStep, int TotalSteps);
+public record StartTeachingResult(
+    string SessionId,
+    bool NeedsConfirm,
+    string FigureDescription,
+    TeachingStep? CurrentStep,
+    int TotalSteps
+);
+public record ConfirmFigureResult(TeachingStep CurrentStep, int TotalSteps);
 
 public record AnswerResult(
     string Verdict,        // correct | partial | wrong
@@ -22,6 +29,20 @@ public record HintResult(int Level, string Help);
 
 public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 {
+    private const string FigureAnalysisPrompt = """
+        คุณคือติวเตอร์คณิตศาสตร์ ม.2 กำลังอ่านโจทย์ที่มีรูปประกอบ
+
+        โจทย์ที่อ่านได้: {problemText}
+        ข้อมูล/สมการจากโจทย์: {latex}
+        หัวข้อ: {topic}
+
+        สรุปสั้นๆ ว่าคุณเข้าใจโครงสร้างของโจทย์นี้อย่างไร (รูปทรง, ค่าที่ทราบ, สิ่งที่ต้องหา)
+        แล้วถามนักเรียนว่าถูกต้องไหม หรือมีอะไรที่ต่างจากรูปจริงบ้าง
+        โทนเป็นกันเอง อย่าสมมติสิ่งที่ไม่มีในโจทย์
+
+        ตอบ JSON เท่านั้น: { "figureDescription": "..." }
+        """;
+
     private const string StepPlanPrompt = """
         คุณคือติวเตอร์คณิตศาสตร์ ม.2 ที่ช่วยให้นักเรียน "คิดเองเป็น" ไม่ใช่เฉลยให้
 
@@ -31,7 +52,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         โจทย์: {problemText}
         สมการ (ถ้ามี): {latex}
         หัวข้อ: {topic}
-
+        {figureContext}
         กฎจำนวนขั้น — เลือกให้เหมาะกับโจทย์ (ไม่ต้องครบ 6 ขั้นทุกครั้ง):
         - โจทย์ตรงๆ แค่ 1 แนวคิด เช่น แก้สมการ x²=c หรือหาค่า x จากนิพจน์ง่ายๆ → 1–2 ขั้น
         - โจทย์กลาง มี 2–3 แนวคิดต่อกัน → 2–4 ขั้น
@@ -74,6 +95,31 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         { "verdict": "correct | partial | wrong", "reason": "เหตุผลสั้นๆ", "missing": "สิ่งที่ยังขาด ไม่บอกคำตอบตรงๆ", "encouragement": "คำให้กำลังใจสั้นๆ" }
         """;
 
+    private const string NotesPrompt = """
+        คุณคือติวเตอร์คณิตศาสตร์ ม.2
+
+        นักเรียนเพิ่งทำโจทย์นี้จนจบ:
+        โจทย์: {problemText}
+        หัวข้อ: {topic}
+
+        ขั้นตอนที่ฝึก:
+        {stepsText}
+
+        สร้างสรุป 2 ส่วน:
+
+        "studentNotes" — บันทึกสำหรับนักเรียน:
+        - สิ่งที่ได้เรียนจากโจทย์นี้ (แนวคิดหลัก + วิธีคิด)
+        - โทนเป็นกันเอง เหมือนคุยกับเพื่อน ไม่เป็นทางการ
+        - 2–3 ประโยค
+
+        "parentSummary" — สรุปสำหรับผู้ปกครอง:
+        - นักเรียนฝึกอะไรวันนี้ (หัวข้อ + แนวคิด)
+        - 1–2 ประโยค กระชับ
+
+        ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON:
+        { "studentNotes": "...", "parentSummary": "..." }
+        """;
+
     private const string HintPrompt = """
         นักเรียนกำลังติดในขั้นนี้ ช่วยตามระดับที่กำหนด โดยค่อยๆ เพิ่มความช่วยเหลือ ไม่เฉลยทันที
 
@@ -95,14 +141,6 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
     public async Task<StartTeachingResult> StartAsync(
         string problemText, string latex, string topic, bool hasFigure)
     {
-        var prompt = StepPlanPrompt
-            .Replace("{problemText}", problemText)
-            .Replace("{latex}", latex)
-            .Replace("{topic}", topic);
-
-        var raw = await chat.CompleteAsync(prompt);
-        var steps = ParseSteps(raw);
-
         var session = new TeachingSessionEntity
         {
             Id          = Guid.NewGuid().ToString(),
@@ -110,15 +148,70 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             Latex       = latex,
             Topic       = topic,
             HasFigure   = hasFigure,
-            StepsJson   = JsonSerializer.Serialize(steps),
+            StepsJson   = "[]",
             CurrentStep = 1,
             Status      = "in_progress",
             CreatedAt   = DateTime.UtcNow.ToString("O"),
         };
+
+        if (hasFigure)
+        {
+            // Phase 1: analyse figure → ask student to confirm before generating step plan
+            var figPrompt = FigureAnalysisPrompt
+                .Replace("{problemText}", problemText)
+                .Replace("{latex}", latex)
+                .Replace("{topic}", topic);
+
+            var figRaw = await chat.CompleteAsync(figPrompt);
+            session.FigureDescription = ParseFigureDescription(figRaw);
+
+            db.TeachingSessions.Add(session);
+            await db.SaveChangesAsync();
+
+            return new StartTeachingResult(session.Id, true, session.FigureDescription, null, 0);
+        }
+
+        // No figure → generate step plan immediately
+        var steps = await GenerateStepPlanAsync(problemText, latex, topic, "");
+        session.StepsJson = JsonSerializer.Serialize(steps);
         db.TeachingSessions.Add(session);
         await db.SaveChangesAsync();
 
-        return new StartTeachingResult(session.Id, steps[0], steps.Count);
+        return new StartTeachingResult(session.Id, false, "", steps[0], steps.Count);
+    }
+
+    public async Task<ConfirmFigureResult> ConfirmFigureAsync(string sessionId, string studentNote)
+    {
+        var session = await db.TeachingSessions.FindAsync(sessionId)
+            ?? throw new KeyNotFoundException($"session {sessionId} not found");
+
+        session.FigureCorrection = string.IsNullOrWhiteSpace(studentNote) ? "ยืนยันถูกต้อง" : studentNote;
+
+        var steps = await GenerateStepPlanAsync(
+            session.ProblemText, session.Latex, session.Topic, session.FigureCorrection);
+
+        session.StepsJson   = JsonSerializer.Serialize(steps);
+        session.CurrentStep = 1;
+        await db.SaveChangesAsync();
+
+        return new ConfirmFigureResult(steps[0], steps.Count);
+    }
+
+    private async Task<List<TeachingStep>> GenerateStepPlanAsync(
+        string problemText, string latex, string topic, string figureCorrection)
+    {
+        var figureContext = string.IsNullOrWhiteSpace(figureCorrection)
+            ? ""
+            : $"ข้อมูลยืนยันจากนักเรียน (ใช้เป็น ground truth): {figureCorrection}";
+
+        var prompt = StepPlanPrompt
+            .Replace("{problemText}", problemText)
+            .Replace("{latex}", latex)
+            .Replace("{topic}", topic)
+            .Replace("{figureContext}", figureContext);
+
+        var raw = await chat.CompleteAsync(prompt);
+        return ParseSteps(raw);
     }
 
     public async Task<AnswerResult> AnswerAsync(string sessionId, string answer)
@@ -223,6 +316,19 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         }
     }
 
+    private static string ParseFigureDescription(string raw)
+    {
+        try
+        {
+            var json = ExtractJson(raw);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("figureDescription", out var d))
+                return d.GetString() ?? raw.Trim();
+        }
+        catch { }
+        return raw.Trim();
+    }
+
     private static string ParseHint(string raw)
     {
         try
@@ -234,6 +340,35 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         }
         catch { }
         return raw.Trim();
+    }
+
+    public async Task<(string StudentNotes, string ParentSummary)> NotesAndSummaryAsync(string sessionId)
+    {
+        var session = await db.TeachingSessions.FindAsync(sessionId)
+            ?? throw new KeyNotFoundException($"session {sessionId} not found");
+
+        var steps = JsonSerializer.Deserialize<List<TeachingStep>>(session.StepsJson)!;
+        var stepsText = string.Join("\n", steps.Select(s => $"- {s.Goal}"));
+
+        var prompt = NotesPrompt
+            .Replace("{problemText}", session.ProblemText)
+            .Replace("{topic}", string.IsNullOrWhiteSpace(session.Topic) ? "คณิตศาสตร์" : session.Topic)
+            .Replace("{stepsText}", stepsText);
+
+        var raw = await chat.CompleteAsync(prompt);
+        try
+        {
+            var json = ExtractJson(raw);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var notes   = root.TryGetProperty("studentNotes",  out var n) ? n.GetString() ?? "" : "";
+            var summary = root.TryGetProperty("parentSummary", out var p) ? p.GetString() ?? "" : "";
+            return (notes, summary);
+        }
+        catch
+        {
+            return ("ทำโจทย์นี้เสร็จแล้ว เก่งมากเลย!", "นักเรียนฝึกทำโจทย์คณิตศาสตร์จนจบ");
+        }
     }
 
     public async Task<(TeachingSessionEntity Session, List<TeachingStep> Steps)> GetSessionAsync(string sessionId)

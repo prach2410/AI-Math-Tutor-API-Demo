@@ -11,5 +11,7 @@ public class TeachingSessionEntity
     public int CurrentStep { get; set; } = 1;     // 1-indexed
     public string Status { get; set; } = "in_progress";
     public int SolutionShownCount { get; set; }
+    public string FigureDescription { get; set; } = "";  // what AI read from the figure (shown to student)
+    public string FigureCorrection { get; set; } = "";   // student's confirmed/corrected description
     public string CreatedAt { get; set; } = "";   // UTC ISO-8601
 }
