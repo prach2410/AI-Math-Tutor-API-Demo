@@ -42,11 +42,16 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
 
         return Ok(new
         {
-            problemText = result.ProblemText,
-            latex       = result.Latex,
-            topic       = result.Topic,
-            readable    = result.Readable,
-            message     = result.Message,
+            readable = result.Readable,
+            message  = result.Message,
+            problems = result.Problems.Select(p => new
+            {
+                index       = p.Index,
+                problemText = p.ProblemText,
+                latex       = p.Latex,
+                topic       = p.Topic,
+                hasFigure   = p.HasFigure,
+            }),
         });
     }
 

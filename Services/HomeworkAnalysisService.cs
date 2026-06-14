@@ -6,10 +6,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
 
+public record ProblemItem(int Index, string ProblemText, string Latex, string Topic, bool HasFigure);
+
 public record HomeworkAnalysisResult(
-    string ProblemText,
-    string Latex,
-    string Topic,
+    List<ProblemItem> Problems,
     bool Readable,
     string Message
 );
@@ -35,15 +35,16 @@ public class HomeworkAnalysisService(AppDbContext db)
     {
         var (result, reason, rawResponse) = await Analyzer.AnalyzeAsync(images, fileName);
 
+        var first = result.Problems.FirstOrDefault();
         db.HomeworkReads.Add(new HomeworkReadEntity
         {
             Filename    = fileName,
             CreatedAt   = DateTime.UtcNow.ToString("O"),
             Readable    = result.Readable,
             Reason      = reason,
-            ProblemText = result.ProblemText,
-            Latex       = result.Latex,
-            Topic       = result.Topic,
+            ProblemText = JsonSerializer.Serialize(result.Problems),
+            Latex       = first?.Latex ?? "",
+            Topic       = first?.Topic ?? "",
             RawResponse = rawResponse,
         });
         await db.SaveChangesAsync();
@@ -65,7 +66,28 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
 
     private const string Prompt = """
         อ่านโจทย์คณิตศาสตร์จากภาพ แล้วตอบเป็น JSON เท่านั้น ห้ามเพิ่มข้อความนอกเหนือจาก JSON
-        (ถ้ามีหลายภาพ = โจทย์ข้อเดียวต่อเนื่อง ให้รวมเนื้อหาจากทุกภาพเป็นโจทย์เดียว)
+
+        ให้แยกโจทย์ทุกข้อที่พบในภาพออกจากกัน (แยกตามเลขข้อ เช่น 1. 2. 3.)
+        ถ้ามีหลายภาพ = ภาพต่อเนื่องกัน ให้รวมโจทย์จากทุกภาพเป็น list เดียวกัน
+
+        รูปแบบที่ต้องการ:
+        {
+          "readable": true,
+          "message": "อ่านโจทย์ได้",
+          "problems": [
+            {
+              "index": 1,
+              "problemText": "ข้อความโจทย์ข้อที่ 1 ครบถ้วน",
+              "latex": "สมการ LaTeX (ถ้าไม่มีใส่ string ว่าง)",
+              "topic": "หัวข้อคณิตศาสตร์ เช่น สมการเชิงเส้นตัวแปรเดียว",
+              "hasFigure": false
+            }
+          ]
+        }
+
+        กฎ hasFigure:
+        - hasFigure: true เมื่อโจทย์ข้อนั้นอ้างถึง "รูป" หรือมีรูปเรขาคณิต/แผนภาพ/กราฟประกอบ
+        - hasFigure: false ถ้าเป็นข้อความล้วนๆ ไม่มีรูปประกอบ
 
         กฎสำคัญ — รูปทางเรขาคณิต:
         - บรรยายเฉพาะค่าที่มี label กำกับจริงในรูป ห้ามสรุปค่าที่ไม่ได้เขียนไว้
@@ -74,22 +96,11 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         - ห้ามสรุปว่าด้านไหนเป็น hypotenuse เว้นแต่รูประบุชัดเจน
         - ถ้าไม่มั่นใจโครงสร้างรูป ให้ระบุใน problemText ว่า "โปรดดูรูปประกอบ" แทนการเดา
 
-        รูปแบบที่ต้องการ:
-        {
-          "problemText": "ข้อความโจทย์ที่อ่านได้ทั้งหมด",
-          "latex": "สมการในรูปแบบ LaTeX (ถ้าไม่มีใส่ string ว่าง)",
-          "topic": "หัวข้อคณิตศาสตร์ เช่น สมการเชิงเส้นตัวแปรเดียว",
-          "readable": true,
-          "message": "อ่านโจทย์ได้"
-        }
-
         ถ้าภาพไม่ชัด ไม่ใช่โจทย์คณิตศาสตร์ หรืออ่านไม่ออก ให้ตอบ:
         {
-          "problemText": "",
-          "latex": "",
-          "topic": "",
           "readable": false,
-          "message": "กรุณาถ่ายภาพโจทย์ให้ชัดขึ้น"
+          "message": "กรุณาถ่ายภาพโจทย์ให้ชัดขึ้น",
+          "problems": []
         }
         """;
 
@@ -132,7 +143,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
 
             if (!response.IsSuccessStatusCode)
             {
-                var errResult = new HomeworkAnalysisResult("", "", "", false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+                var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
                 return (errResult, $"api_error_{(int)response.StatusCode}", raw);
             }
 
@@ -144,7 +155,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         }
         catch (Exception ex)
         {
-            var errResult = new HomeworkAnalysisResult("", "", "", false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+            var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
             return (errResult, "exception: " + ex.Message, raw);
         }
     }
@@ -156,18 +167,36 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
             var json = ExtractJson(text);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var result = new HomeworkAnalysisResult(
-                ProblemText: root.GetProperty("problemText").GetString() ?? "",
-                Latex:       root.GetProperty("latex").GetString() ?? "",
-                Topic:       root.GetProperty("topic").GetString() ?? "",
-                Readable:    root.GetProperty("readable").GetBoolean(),
-                Message:     root.GetProperty("message").GetString() ?? ""
-            );
-            return (result, result.Readable ? "ok" : "model_unreadable");
+
+            var readable = root.GetProperty("readable").GetBoolean();
+            var message  = root.GetProperty("message").GetString() ?? "";
+
+            if (!readable)
+                return (new HomeworkAnalysisResult([], false, message), "model_unreadable");
+
+            var problems = new List<ProblemItem>();
+            if (root.TryGetProperty("problems", out var problemsEl) && problemsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in problemsEl.EnumerateArray())
+                {
+                    problems.Add(new ProblemItem(
+                        Index:       p.TryGetProperty("index", out var idx) ? idx.GetInt32() : problems.Count + 1,
+                        ProblemText: p.GetProperty("problemText").GetString() ?? "",
+                        Latex:       p.TryGetProperty("latex", out var lat) ? lat.GetString() ?? "" : "",
+                        Topic:       p.TryGetProperty("topic", out var top) ? top.GetString() ?? "" : "",
+                        HasFigure:   p.TryGetProperty("hasFigure", out var hf) && hf.GetBoolean()
+                    ));
+                }
+            }
+
+            if (problems.Count == 0)
+                return (new HomeworkAnalysisResult([], false, "อ่านโจทย์ไม่ออก กรุณาลองใหม่"), "parse_no_problems");
+
+            return (new HomeworkAnalysisResult(problems, true, message), "ok");
         }
         catch
         {
-            return (new HomeworkAnalysisResult("", "", "", false, "อ่านโจทย์ไม่ออก กรุณาลองใหม่"), "parse_error");
+            return (new HomeworkAnalysisResult([], false, "อ่านโจทย์ไม่ออก กรุณาลองใหม่"), "parse_error");
         }
     }
 
@@ -196,11 +225,20 @@ internal class MockHomeworkAnalyzer : IHomeworkAnalyzer
     {
         var label = images.Count > 1 ? $"mock ({images.Count} รูป)" : "mock";
         var result = new HomeworkAnalysisResult(
-            ProblemText: "กล่องพัสดุใบหนึ่งมีความกว้าง x เซนติเมตร ยาวกว่าความกว้าง 5 เซนติเมตร และสูง 3x เซนติเมตร ถ้าปริมาตรของกล่องเท่ากับ 1,200 ลูกบาศก์เซนติเมตร จงหาค่า x",
-            Latex:       @"x(x+5)(3x) = 1200",
-            Topic:       "สมการพหุนาม",
-            Readable:    true,
-            Message:     "อ่านโจทย์ได้"
+            Problems: [
+                new ProblemItem(1,
+                    "กล่องพัสดุใบหนึ่งมีความกว้าง x เซนติเมตร ยาวกว่าความกว้าง 5 เซนติเมตร และสูง 3x เซนติเมตร ถ้าปริมาตรของกล่องเท่ากับ 1,200 ลูกบาศก์เซนติเมตร จงหาค่า x",
+                    @"x(x+5)(3x) = 1200",
+                    "สมการพหุนาม",
+                    false),
+                new ProblemItem(2,
+                    "ถังน้ำทรงกระบอกรัศมี r เซนติเมตร สูง 40 เซนติเมตร มีปริมาตร 5,024 ลูกบาศก์เซนติเมตร จงหาค่า r",
+                    @"\pi r^2 \times 40 = 5024",
+                    "ปริมาตรทรงกระบอก",
+                    false),
+            ],
+            Readable: true,
+            Message:  "อ่านโจทย์ได้"
         );
         return Task.FromResult((result, label, "(mock provider — ไม่ได้ยิง API จริง)"));
     }
