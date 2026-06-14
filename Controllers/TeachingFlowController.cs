@@ -8,9 +8,32 @@ namespace backend.Controllers;
 public class TeachingFlowController(TeachingFlowService service) : ControllerBase
 {
     public record StartRequest(string ProblemText, string Latex, string Topic, bool HasFigure);
+    public record SolveRequest(string ProblemText, string Latex, string Topic);
     public record AnswerRequest(string Answer);
     public record HintRequest(int Level);
     public record ConfirmFigureRequest(string StudentNote);
+
+    [HttpPost("solve")]
+    public async Task<IActionResult> Solve([FromBody] SolveRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.ProblemText))
+            return BadRequest(new { error = "กรุณาระบุโจทย์" });
+
+        try
+        {
+            var result = await service.SolveAsync(req.ProblemText, req.Latex, req.Topic);
+            return Ok(new
+            {
+                sessionId       = result.SessionId,
+                solutionSteps   = result.SolutionSteps,
+                understandingStep = result.UnderstandingStep,
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "ไม่สามารถสร้างวิธีทำได้ กรุณาลองใหม่", detail = ex.Message });
+        }
+    }
 
     [HttpPost("start")]
     public async Task<IActionResult> Start([FromBody] StartRequest req)

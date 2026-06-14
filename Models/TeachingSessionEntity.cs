@@ -14,4 +14,6 @@ public class TeachingSessionEntity
     public string FigureDescription { get; set; } = "";  // what AI read from the figure (shown to student)
     public string FigureCorrection { get; set; } = "";   // student's confirmed/corrected description
     public string CreatedAt { get; set; } = "";   // UTC ISO-8601
+    public string Mode { get; set; } = "guide_first";  // guide_first | solve_first
+    public int SolveFirstCount { get; set; }
 }

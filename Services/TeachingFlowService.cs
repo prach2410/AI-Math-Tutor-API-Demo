@@ -26,6 +26,7 @@ public record AnswerResult(
 );
 
 public record HintResult(int Level, string Help);
+public record SolveResult(string SessionId, string[] SolutionSteps, string UnderstandingStep);
 
 public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 {
@@ -118,6 +119,27 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 
         ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON:
         { "studentNotes": "...", "parentSummary": "..." }
+        """;
+
+    private const string SolvePrompt = """
+        คุณคือติวเตอร์คณิตศาสตร์ ม.2 กำลังช่วยนักเรียนที่ต้องการเห็นวิธีทำก่อนแล้วค่อยเข้าใจ
+
+        โจทย์: {problemText}
+        สมการ (ถ้ามี): {latex}
+        หัวข้อ: {topic}
+
+        งาน 2 อย่าง:
+        1. "solutionSteps" — วิธีทำเต็มทีละขั้น อ่านง่าย ชัดเจน (array of strings)
+           - แต่ละขั้นอธิบายว่าทำอะไร ทำไม และผลลัพธ์คืออะไร
+           - ขั้นสุดท้ายต้องระบุคำตอบสุดท้ายชัดเจน
+        2. "understandingStep" — คำถาม/งานสั้นๆ 1 อย่างเพื่อให้แน่ใจว่าเข้าใจจริง เลือก 1 อย่างที่เหมาะที่สุด:
+           - โจทย์คล้ายกันแต่เลขต่าง ให้ลองทำ
+           - ถามว่าขั้นใดขั้นหนึ่งทำไมถึงทำแบบนั้น
+           - คำถามตรวจสอบความเข้าใจ 1 ข้อ
+           โทนเป็นกันเอง ภาษาไทย ไม่ยาวเกินไป
+
+        ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON:
+        { "solutionSteps": ["ขั้น 1: ...", "ขั้น 2: ..."], "understandingStep": "..." }
         """;
 
     private const string HintPrompt = """
@@ -401,6 +423,60 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
                 new TeachingStep(2, "วางแผนแก้โจทย์", "เรามีวิธีไหนบ้างที่จะใช้แก้โจทย์นี้ได้?", "คิดถึงสูตรที่เรียนมา"),
                 new TeachingStep(3, "คำนวณและสรุป", "ลองแทนค่าและหาคำตอบดูนะ", "ทำทีละขั้น"),
             ];
+        }
+    }
+
+    public async Task<SolveResult> SolveAsync(string problemText, string latex, string topic)
+    {
+        var prompt = SolvePrompt
+            .Replace("{problemText}", problemText)
+            .Replace("{latex}", latex)
+            .Replace("{topic}", topic);
+
+        var raw = await chat.CompleteAsync(prompt);
+        var (steps, understanding) = ParseSolveResponse(raw);
+
+        var session = new TeachingSessionEntity
+        {
+            Id              = Guid.NewGuid().ToString(),
+            ProblemText     = problemText,
+            Latex           = latex,
+            Topic           = topic,
+            Mode            = "solve_first",
+            SolveFirstCount = 1,
+            StepsJson       = "[]",
+            Status          = "done",
+            CreatedAt       = DateTime.UtcNow.ToString("O"),
+        };
+        db.TeachingSessions.Add(session);
+        await db.SaveChangesAsync();
+
+        return new SolveResult(session.Id, [.. steps], understanding);
+    }
+
+    private static (List<string> Steps, string Understanding) ParseSolveResponse(string raw)
+    {
+        try
+        {
+            var json = ExtractJson(raw);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var steps = root.GetProperty("solutionSteps")
+                .EnumerateArray()
+                .Select(e => e.GetString() ?? "")
+                .Where(s => s.Length > 0)
+                .ToList();
+
+            var understanding = root.TryGetProperty("understandingStep", out var u)
+                ? u.GetString() ?? ""
+                : "";
+
+            return (steps, understanding);
+        }
+        catch
+        {
+            return (["ดูวิธีทำเต็มไม่สำเร็จ กรุณาลองใหม่"], "");
         }
     }
 
