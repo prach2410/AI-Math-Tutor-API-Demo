@@ -126,7 +126,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
         var body = new
         {
             model = "claude-opus-4-8",
-            max_tokens = 4096,
+            max_tokens = 8192,
             messages = new[] { new { role = "user", content } }
         };
 
