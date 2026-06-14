@@ -235,7 +235,7 @@ internal static class HomeworkResponseParser
 
 internal class OllamaHomeworkAnalyzer : IHomeworkAnalyzer
 {
-    private static readonly HttpClient Http = new();
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(300) };
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
