@@ -45,6 +45,45 @@ public class ClaudeChatProvider : IChatProvider
     }
 }
 
+public class OllamaChatProvider : IChatProvider
+{
+    private static readonly HttpClient Http = new();
+    private readonly string _apiKey;
+    private readonly string _model;
+    private readonly string _endpoint;
+
+    public OllamaChatProvider(string apiKey, string model = "qwen3.6:35b",
+        string endpoint = "https://dgx.toptier.co.th/ollama/api/chat")
+    {
+        _apiKey   = apiKey;
+        _model    = model;
+        _endpoint = endpoint;
+    }
+
+    public async Task<string> CompleteAsync(string prompt)
+    {
+        var body = new
+        {
+            model    = _model,
+            messages = new[] { new { role = "user", content = prompt } },
+            stream   = false
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+        request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        using var response = await Http.SendAsync(request);
+        var raw = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Ollama API error {(int)response.StatusCode}: {raw}");
+
+        using var doc = JsonDocument.Parse(raw);
+        return doc.RootElement.GetProperty("message").GetProperty("content").GetString() ?? "";
+    }
+}
+
 public class MockChatProvider : IChatProvider
 {
     public Task<string> CompleteAsync(string prompt)

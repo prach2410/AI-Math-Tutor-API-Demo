@@ -11,13 +11,27 @@ builder.Services.AddSingleton<ProjectBrainTutorService>();
 builder.Services.AddScoped<HomeworkAnalysisService>();
 builder.Services.AddScoped<ProjectBrainEvidenceService>();
 
-var anthropicKey = builder.Configuration.GetValue<string>("ANTHROPIC_API_KEY")
-    ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
-    ?? "";
-if (string.IsNullOrWhiteSpace(anthropicKey))
-    builder.Services.AddSingleton<IChatProvider, MockChatProvider>();
+var textProvider = builder.Configuration.GetValue<string>("LLM__TextProvider")
+    ?? Environment.GetEnvironmentVariable("LLM__TextProvider")
+    ?? "Claude";
+
+if (textProvider == "LocalAI")
+{
+    var localAiKey = builder.Configuration.GetValue<string>("LLM__LocalAI__ApiKey")
+        ?? Environment.GetEnvironmentVariable("LLM__LocalAI__ApiKey")
+        ?? "";
+    builder.Services.AddSingleton<IChatProvider>(_ => new OllamaChatProvider(localAiKey));
+}
 else
-    builder.Services.AddSingleton<IChatProvider>(_ => new ClaudeChatProvider(anthropicKey, "claude-sonnet-4-6"));
+{
+    var anthropicKey = builder.Configuration.GetValue<string>("ANTHROPIC_API_KEY")
+        ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+        ?? "";
+    if (string.IsNullOrWhiteSpace(anthropicKey))
+        builder.Services.AddSingleton<IChatProvider, MockChatProvider>();
+    else
+        builder.Services.AddSingleton<IChatProvider>(_ => new ClaudeChatProvider(anthropicKey, "claude-sonnet-4-6"));
+}
 
 builder.Services.AddScoped<TeachingFlowService>();
 
