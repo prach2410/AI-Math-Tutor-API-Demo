@@ -88,4 +88,58 @@ public class LearningRecordsService(IConfiguration config)
             .Select(g => new DailyLogGroup(g.Key, g.ToList()))
             .ToList();
     }
+
+    public async Task<(string Markdown, string Filename)?> ExportMarkdownAsync(string id)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson
+            FROM   LearningRecords
+            WHERE  Id = $id
+            """;
+        cmd.Parameters.AddWithValue("$id", id);
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        var date     = reader.GetString(0);
+        var docType  = reader.GetString(1);
+        var topic    = reader.GetString(2);
+        var summary  = reader.GetString(3);
+
+        List<string> highlights, keywords;
+        try { highlights = JsonSerializer.Deserialize<List<string>>(reader.GetString(4)) ?? []; } catch { highlights = []; }
+        try { keywords   = JsonSerializer.Deserialize<List<string>>(reader.GetString(5)) ?? []; } catch { keywords   = []; }
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"# {date}");
+        sb.AppendLine();
+        sb.AppendLine("## ประเภทเอกสาร");
+        sb.AppendLine(docType);
+        sb.AppendLine();
+        sb.AppendLine("## หัวข้อ");
+        sb.AppendLine(topic);
+        sb.AppendLine();
+        sb.AppendLine("## สรุปเนื้อหา");
+        sb.AppendLine(summary);
+        if (highlights.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## สิ่งสำคัญ");
+            foreach (var h in highlights) sb.AppendLine($"- {h}");
+        }
+        if (keywords.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## คำสำคัญ");
+            foreach (var k in keywords) sb.AppendLine($"- {k}");
+        }
+
+        var safeTopic = string.Concat(topic.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        var filename  = $"{date}_{safeTopic}.md";
+
+        return (sb.ToString(), filename);
+    }
 }

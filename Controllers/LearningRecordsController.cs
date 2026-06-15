@@ -1,5 +1,6 @@
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text;
 
 namespace backend.Controllers;
 
@@ -24,5 +25,15 @@ public class LearningRecordsController(LearningRecordsService service) : Control
                 createdAt    = r.CreatedAt,
             })
         }));
+    }
+
+    [HttpGet("{id}/export")]
+    public async Task<IActionResult> Export(string id)
+    {
+        var result = await service.ExportMarkdownAsync(id);
+        if (result is null) return NotFound();
+
+        var bytes = Encoding.UTF8.GetBytes(result.Value.Markdown);
+        return File(bytes, "text/markdown; charset=utf-8", result.Value.Filename);
     }
 }
