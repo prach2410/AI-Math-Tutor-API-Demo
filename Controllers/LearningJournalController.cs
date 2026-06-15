@@ -5,7 +5,9 @@ namespace backend.Controllers;
 
 [ApiController]
 [Route("api/learning-journal")]
-public class LearningJournalController(LearningJournalService service) : ControllerBase
+public class LearningJournalController(
+    LearningJournalService service,
+    LearningRecordsService records) : ControllerBase
 {
     private static readonly string[] AllowedTypes =
         ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
@@ -33,6 +35,11 @@ public class LearningJournalController(LearningJournalService service) : Control
         }
 
         var result = await service.AnalyzeAsync(imageData);
+
+        if (result.Readable)
+        {
+            try { await records.SaveAsync(result); } catch { /* don't break analysis on save failure */ }
+        }
 
         return Ok(new
         {

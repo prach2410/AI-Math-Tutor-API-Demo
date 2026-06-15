@@ -11,6 +11,7 @@ builder.Services.AddSingleton<ProjectBrainTutorService>();
 builder.Services.AddScoped<HomeworkAnalysisService>();
 builder.Services.AddScoped<ProjectBrainEvidenceService>();
 builder.Services.AddSingleton<LearningJournalService>();
+builder.Services.AddSingleton<LearningRecordsService>();
 
 var textProvider = builder.Configuration.GetValue<string>("LLM__TextProvider")
     ?? Environment.GetEnvironmentVariable("LLM__TextProvider")
@@ -91,6 +92,19 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN FigureCorrection  TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN Mode             TEXT NOT NULL DEFAULT 'guide_first'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN SolveFirstCount  INTEGER NOT NULL DEFAULT 0"); } catch { }
+
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS LearningRecords (
+            Id             TEXT NOT NULL PRIMARY KEY,
+            Date           TEXT NOT NULL,
+            DocumentType   TEXT NOT NULL,
+            Topic          TEXT NOT NULL,
+            Summary        TEXT NOT NULL,
+            HighlightsJson TEXT NOT NULL DEFAULT '[]',
+            KeywordsJson   TEXT NOT NULL DEFAULT '[]',
+            CreatedAt      TEXT NOT NULL
+        );
+        """);
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS HomeworkReads (
