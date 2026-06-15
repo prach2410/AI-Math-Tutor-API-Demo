@@ -9,6 +9,7 @@ public record LearningJournalAnalysis(
     string DocumentType,
     string Topic,
     string Summary,
+    List<string> Highlights,
     List<string> Keywords
 );
 
@@ -62,14 +63,22 @@ internal static class JournalPrompt
           "documentType": "Whiteboard",
           "topic": "หัวข้อที่เรียน เช่น พหุนาม",
           "summary": "สรุปเนื้อหาที่เห็นในภาพ 2-4 ประโยค",
+          "highlights": ["ประเด็นสำคัญ 1", "ประเด็นสำคัญ 2", "ประเด็นสำคัญ 3"],
           "keywords": ["คำสำคัญ1", "คำสำคัญ2", "คำสำคัญ3"]
         }
+
+        กฎ highlights (3-5 ข้อ) — ต่างกันตามประเภทเอกสาร:
+        - Whiteboard : สิ่งที่ครูเขียน/อธิบาย/เน้นในกระดาน
+        - Notebook   : สิ่งสำคัญที่นักเรียนจด + สิ่งที่ดูไม่สมบูรณ์หรืออาจเข้าใจผิด
+        - Textbook   : แนวคิดหลักและตัวอย่างที่แสดงในหน้านี้
+        - Worksheet  : ประเภทโจทย์และทักษะที่ฝึก
+        - Homework   : โจทย์ที่ได้รับและทักษะที่ต้องใช้
 
         ถ้าภาพไม่ชัด ไม่ใช่เอกสารการเรียน หรือวิเคราะห์ไม่ออก ให้ตอบ:
         {
           "readable": false,
           "message": "กรุณาถ่ายภาพให้ชัดขึ้น",
-          "documentType": "", "topic": "", "summary": "", "keywords": []
+          "documentType": "", "topic": "", "summary": "", "highlights": [], "keywords": []
         }
         """;
 }
@@ -87,21 +96,25 @@ internal static class JournalParser
             var readable = root.GetProperty("readable").GetBoolean();
             var message  = root.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
 
-            if (!readable) return new LearningJournalAnalysis(false, message, "", "", "", []);
+            if (!readable) return new LearningJournalAnalysis(false, message, "", "", "", [], []);
 
-            var docType  = root.TryGetProperty("documentType", out var dt) ? dt.GetString() ?? "" : "";
-            var topic    = root.TryGetProperty("topic",        out var t)  ? t.GetString()  ?? "" : "";
-            var summary  = root.TryGetProperty("summary",      out var s)  ? s.GetString()  ?? "" : "";
+            var docType    = root.TryGetProperty("documentType", out var dt) ? dt.GetString() ?? "" : "";
+            var topic      = root.TryGetProperty("topic",        out var t)  ? t.GetString()  ?? "" : "";
+            var summary    = root.TryGetProperty("summary",      out var s)  ? s.GetString()  ?? "" : "";
+            var highlights = new List<string>();
+            if (root.TryGetProperty("highlights", out var hl) && hl.ValueKind == JsonValueKind.Array)
+                foreach (var h in hl.EnumerateArray())
+                    highlights.Add(h.GetString() ?? "");
             var keywords = new List<string>();
             if (root.TryGetProperty("keywords", out var kw) && kw.ValueKind == JsonValueKind.Array)
                 foreach (var k in kw.EnumerateArray())
                     keywords.Add(k.GetString() ?? "");
 
-            return new LearningJournalAnalysis(true, message, docType, topic, summary, keywords);
+            return new LearningJournalAnalysis(true, message, docType, topic, summary, highlights, keywords);
         }
         catch
         {
-            return new LearningJournalAnalysis(false, "วิเคราะห์ไม่ออก กรุณาลองใหม่", "", "", "", []);
+            return new LearningJournalAnalysis(false, "วิเคราะห์ไม่ออก กรุณาลองใหม่", "", "", "", [], []);
         }
     }
 
@@ -130,7 +143,7 @@ internal class ClaudeLearningJournalAnalyzer(string apiKey) : ILearningJournalAn
         IReadOnlyList<(byte[] Bytes, string MediaType)> images)
     {
         if (string.IsNullOrWhiteSpace(apiKey))
-            return new LearningJournalAnalysis(false, "ไม่พบ ANTHROPIC_API_KEY", "", "", "", []);
+            return new LearningJournalAnalysis(false, "ไม่พบ ANTHROPIC_API_KEY", "", "", "", [], []);
 
         var imageBlocks = images.Select(img => (object)new
         {
@@ -157,7 +170,7 @@ internal class ClaudeLearningJournalAnalyzer(string apiKey) : ILearningJournalAn
             var raw = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", []);
+                return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", [], []);
 
             using var doc = JsonDocument.Parse(raw);
             var text = doc.RootElement.GetProperty("content")[0].GetProperty("text").GetString() ?? "";
@@ -165,7 +178,7 @@ internal class ClaudeLearningJournalAnalyzer(string apiKey) : ILearningJournalAn
         }
         catch
         {
-            return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", []);
+            return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", [], []);
         }
     }
 }
@@ -196,7 +209,7 @@ internal class OllamaLearningJournalAnalyzer(string apiKey, string model) : ILea
         {
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode)
-                return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", []);
+                return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", [], []);
 
             var sb = new StringBuilder();
             await using var stream = await response.Content.ReadAsStreamAsync();
@@ -218,7 +231,7 @@ internal class OllamaLearningJournalAnalyzer(string apiKey, string model) : ILea
         }
         catch
         {
-            return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", []);
+            return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", [], []);
         }
     }
 }

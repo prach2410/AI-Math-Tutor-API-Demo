@@ -41,6 +41,7 @@ public class LearningJournalController(LearningJournalService service) : Control
             documentType = result.DocumentType,
             topic        = result.Topic,
             summary      = result.Summary,
+            highlights   = result.Highlights,
             keywords     = result.Keywords,
         });
     }
