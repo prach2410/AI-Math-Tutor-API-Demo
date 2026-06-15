@@ -10,6 +10,7 @@ builder.Services.AddSingleton<FreeTalkService>();
 builder.Services.AddSingleton<ProjectBrainTutorService>();
 builder.Services.AddScoped<HomeworkAnalysisService>();
 builder.Services.AddScoped<ProjectBrainEvidenceService>();
+builder.Services.AddSingleton<LearningJournalService>();
 
 var textProvider = builder.Configuration.GetValue<string>("LLM__TextProvider")
     ?? Environment.GetEnvironmentVariable("LLM__TextProvider")
