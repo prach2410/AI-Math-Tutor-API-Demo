@@ -31,8 +31,9 @@ public class HomeworkAnalysisService(AppDbContext db)
         var visionProvider = Environment.GetEnvironmentVariable("LLM__VisionProvider") ?? "Claude";
         if (visionProvider == "LocalAI")
         {
-            var key = Environment.GetEnvironmentVariable("LLM__LocalAI__ApiKey") ?? "";
-            return new OllamaHomeworkAnalyzer(key);
+            var key   = Environment.GetEnvironmentVariable("LLM__LocalAI__ApiKey") ?? "";
+            var model = Environment.GetEnvironmentVariable("LLM__LocalAI__VisionModel") ?? "gemma4:26b";
+            return new OllamaHomeworkAnalyzer(key, model);
         }
 
         var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
@@ -261,7 +262,7 @@ internal class OllamaHomeworkAnalyzer : IHomeworkAnalyzer
             {
                 new { role = "user", content = ClaudeHomeworkAnalyzer.Prompt, images = base64Images }
             },
-            stream = false
+            stream = true
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
@@ -271,20 +272,38 @@ internal class OllamaHomeworkAnalyzer : IHomeworkAnalyzer
         var raw = "";
         try
         {
-            using var response = await Http.SendAsync(request);
-            raw = await response.Content.ReadAsStringAsync();
+            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
             if (!response.IsSuccessStatusCode)
             {
+                raw = await response.Content.ReadAsStringAsync();
                 var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
                 return (errResult, $"ollama_error_{(int)response.StatusCode}", raw);
             }
 
-            using var doc = JsonDocument.Parse(raw);
-            var text = doc.RootElement.GetProperty("message").GetProperty("content").GetString() ?? "";
+            var sb = new StringBuilder();
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(stream);
 
-            var (result, reason) = HomeworkResponseParser.ParseResult(text);
-            return (result, reason, text);
+            while (!reader.EndOfStream)
+            {
+                var line = await reader.ReadLineAsync();
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                using var lineDoc = JsonDocument.Parse(line);
+                var root = lineDoc.RootElement;
+
+                if (root.TryGetProperty("message", out var msg) &&
+                    msg.TryGetProperty("content", out var chunk))
+                    sb.Append(chunk.GetString());
+
+                if (root.TryGetProperty("done", out var done) && done.GetBoolean())
+                    break;
+            }
+
+            raw = sb.ToString();
+            var (result, reason) = HomeworkResponseParser.ParseResult(raw);
+            return (result, reason, raw);
         }
         catch (Exception ex)
         {
