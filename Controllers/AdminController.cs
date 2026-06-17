@@ -12,16 +12,27 @@ namespace backend.Controllers;
 public class AdminController(AppDbContext db, LearningRecordsService learningRecords) : ControllerBase
 {
     [HttpGet("sessions")]
-    public async Task<IActionResult> GetSessions([FromQuery] string? date)
+    public async Task<IActionResult> GetSessions([FromQuery] string? weekOf)
     {
-        var targetDate = string.IsNullOrWhiteSpace(date)
-            ? DateTime.UtcNow.ToString("yyyy-MM-dd")
-            : date;
+        var refDate = string.IsNullOrWhiteSpace(weekOf)
+            ? DateOnly.FromDateTime(DateTime.UtcNow)
+            : DateOnly.ParseExact(weekOf, "yyyy-MM-dd", null);
 
-        var lrEntries = await learningRecords.GetByDateAsync(targetDate);
+        // Monday–Sunday of the week containing refDate
+        int daysFromMonday = ((int)refDate.DayOfWeek + 6) % 7;
+        var monday    = refDate.AddDays(-daysFromMonday);
+        var sunday    = monday.AddDays(6);
+        var nextMonday = monday.AddDays(7);
+
+        var mondayStr     = monday.ToString("yyyy-MM-dd");
+        var sundayStr     = sunday.ToString("yyyy-MM-dd");
+        var nextMondayStr = nextMonday.ToString("yyyy-MM-dd");
+
+        var lrEntries = await learningRecords.GetByDateRangeAsync(mondayStr, sundayStr);
         var lrList = lrEntries.Select(r => new
         {
             id           = r.Id,
+            date         = r.Date,
             documentType = r.DocumentType,
             topic        = r.Topic,
             summary      = r.Summary,
@@ -29,14 +40,18 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             createdAt    = r.CreatedAt,
         });
 
-        var hwSessions = await db.TeachingSessions
-            .Where(s => s.CreatedAt.StartsWith(targetDate))
-            .OrderByDescending(s => s.CreatedAt)
-            .ToListAsync();
+        // Filter in-memory: C# has no string comparison operators; dataset is small (personal use)
+        var hwSessions = (await db.TeachingSessions.ToListAsync())
+            .Where(s => s.CreatedAt.Length >= 10
+                     && string.Compare(s.CreatedAt[..10], mondayStr,     StringComparison.Ordinal) >= 0
+                     && string.Compare(s.CreatedAt[..10], sundayStr,     StringComparison.Ordinal) <= 0)
+            .OrderBy(s => s.CreatedAt)
+            .ToList();
 
         var hwList = hwSessions.Select(s => new
         {
             id          = s.Id,
+            date        = s.CreatedAt.Length >= 10 ? s.CreatedAt[..10] : mondayStr,
             topic       = s.Topic,
             problemText = s.ProblemText,
             status      = s.Status,
@@ -44,7 +59,7 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             createdAt   = s.CreatedAt,
         });
 
-        return Ok(new { learningRecords = lrList, homeworkSessions = hwList });
+        return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkSessions = hwList });
     }
 
     [HttpGet("export/homework/{id}")]
