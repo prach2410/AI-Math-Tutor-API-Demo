@@ -16,4 +16,5 @@ public class TeachingSessionEntity
     public string CreatedAt { get; set; } = "";   // UTC ISO-8601
     public string Mode { get; set; } = "guide_first";  // guide_first | solve_first
     public int SolveFirstCount { get; set; }
+    public string DownloadedAt { get; set; } = "";
 }

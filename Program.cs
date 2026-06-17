@@ -89,6 +89,8 @@ using (var scope = app.Services.CreateScope())
 
     // Add columns that may be missing from older DB instances
     try { db.Database.ExecuteSqlRaw("ALTER TABLE LearningRecords ADD COLUMN ImageHash TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE LearningRecords ADD COLUMN DownloadedAt TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN DownloadedAt TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN FigureDescription TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN FigureCorrection  TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN Mode             TEXT NOT NULL DEFAULT 'guide_first'"); } catch { }

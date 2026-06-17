@@ -38,6 +38,7 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             summary      = r.Summary,
             keywords     = r.Keywords,
             createdAt    = r.CreatedAt,
+            downloadedAt = r.DownloadedAt,
         });
 
         // Filter in-memory: C# has no string comparison operators; dataset is small (personal use)
@@ -50,13 +51,14 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
 
         var hwList = hwSessions.Select(s => new
         {
-            id          = s.Id,
-            date        = s.CreatedAt.Length >= 10 ? s.CreatedAt[..10] : mondayStr,
-            topic       = s.Topic,
-            problemText = s.ProblemText,
-            status      = s.Status,
-            mode        = s.Mode,
-            createdAt   = s.CreatedAt,
+            id           = s.Id,
+            date         = s.CreatedAt.Length >= 10 ? s.CreatedAt[..10] : mondayStr,
+            topic        = s.Topic,
+            problemText  = s.ProblemText,
+            status       = s.Status,
+            mode         = s.Mode,
+            createdAt    = s.CreatedAt,
+            downloadedAt = s.DownloadedAt,
         });
 
         return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkSessions = hwList });
@@ -67,6 +69,9 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
     {
         var session = await db.TeachingSessions.FindAsync(id);
         if (session is null) return NotFound();
+
+        session.DownloadedAt = DateTime.UtcNow.ToString("O");
+        await db.SaveChangesAsync();
 
         var date = session.CreatedAt.Length >= 10
             ? session.CreatedAt[..10]

@@ -10,7 +10,8 @@ public record LearningRecordEntry(
     string Topic,
     string Summary,
     List<string> Keywords,
-    string CreatedAt
+    string CreatedAt,
+    string DownloadedAt = ""
 );
 
 public record DailyLogGroup(
@@ -109,7 +110,7 @@ public class LearningRecordsService(IConfiguration config)
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt
+            SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt, DownloadedAt
             FROM   LearningRecords
             WHERE  Date >= $start AND Date <= $end
             ORDER  BY Date ASC, CreatedAt ASC
@@ -132,7 +133,8 @@ public class LearningRecordsService(IConfiguration config)
                 Topic:        reader.GetString(3),
                 Summary:      reader.GetString(4),
                 Keywords:     kw,
-                CreatedAt:    reader.GetString(6)
+                CreatedAt:    reader.GetString(6),
+                DownloadedAt: reader.IsDBNull(7) ? "" : reader.GetString(7)
             ));
         }
         return entries;
@@ -222,6 +224,15 @@ public class LearningRecordsService(IConfiguration config)
 
         var safeTopic = string.Concat(topic.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var filename  = $"{date}_{safeTopic}.md";
+
+        // Mark as downloaded
+        using var updateConn = new SqliteConnection($"Data Source={_dbPath}");
+        await updateConn.OpenAsync();
+        using var updateCmd = updateConn.CreateCommand();
+        updateCmd.CommandText = "UPDATE LearningRecords SET DownloadedAt = $now WHERE Id = $id";
+        updateCmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+        updateCmd.Parameters.AddWithValue("$id",  id);
+        await updateCmd.ExecuteNonQueryAsync();
 
         return (sb.ToString(), filename);
     }
