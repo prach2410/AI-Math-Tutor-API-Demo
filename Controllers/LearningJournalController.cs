@@ -63,14 +63,17 @@ public class LearningJournalController(
 
         var result = await service.AnalyzeAsync(imageData);
 
+        var savedId = "";
         if (result.Readable)
         {
-            try { await records.SaveAsync(result, imageHash); } catch { /* don't break analysis on save failure */ }
+            try { savedId = await records.SaveAsync(result, imageHash); }
+            catch { /* don't break analysis on save failure */ }
         }
 
         return Ok(new
         {
             readable     = result.Readable,
+            id           = savedId,
             message      = result.Message,
             documentType = result.DocumentType,
             topic        = result.Topic,

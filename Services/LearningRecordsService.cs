@@ -11,7 +11,8 @@ public record LearningRecordEntry(
     string Summary,
     List<string> Keywords,
     string CreatedAt,
-    string DownloadedAt = ""
+    string DownloadedAt = "",
+    string Reflection = ""
 );
 
 public record DailyLogGroup(
@@ -39,7 +40,7 @@ public class LearningRecordsService(IConfiguration config)
         return (reader.GetString(0), reader.GetString(1));
     }
 
-    public async Task SaveAsync(LearningJournalAnalysis analysis, string imageHash = "")
+    public async Task<string> SaveAsync(LearningJournalAnalysis analysis, string imageHash = "")
     {
         var id          = Guid.NewGuid().ToString();
         var date        = DateTime.UtcNow.ToString("yyyy-MM-dd");
@@ -64,6 +65,18 @@ public class LearningRecordsService(IConfiguration config)
         cmd.Parameters.AddWithValue("$kw",        kw);
         cmd.Parameters.AddWithValue("$createdAt", createdAt);
         cmd.Parameters.AddWithValue("$hash",      imageHash);
+        await cmd.ExecuteNonQueryAsync();
+        return id;
+    }
+
+    public async Task SetReflectionAsync(string id, string reflection)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE LearningRecords SET Reflection = $reflection WHERE Id = $id";
+        cmd.Parameters.AddWithValue("$reflection", reflection);
+        cmd.Parameters.AddWithValue("$id", id);
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -110,7 +123,7 @@ public class LearningRecordsService(IConfiguration config)
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt, DownloadedAt
+            SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt, DownloadedAt, Reflection
             FROM   LearningRecords
             WHERE  Date >= $start AND Date <= $end
             ORDER  BY Date ASC, CreatedAt ASC
@@ -134,7 +147,8 @@ public class LearningRecordsService(IConfiguration config)
                 Summary:      reader.GetString(4),
                 Keywords:     kw,
                 CreatedAt:    reader.GetString(6),
-                DownloadedAt: reader.IsDBNull(7) ? "" : reader.GetString(7)
+                DownloadedAt: reader.IsDBNull(7) ? "" : reader.GetString(7),
+                Reflection:   reader.IsDBNull(8) ? "" : reader.GetString(8)
             ));
         }
         return entries;
@@ -180,7 +194,7 @@ public class LearningRecordsService(IConfiguration config)
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson
+            SELECT Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, Reflection
             FROM   LearningRecords
             WHERE  Id = $id
             """;
@@ -189,10 +203,11 @@ public class LearningRecordsService(IConfiguration config)
         using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
 
-        var date     = reader.GetString(0);
-        var docType  = reader.GetString(1);
-        var topic    = reader.GetString(2);
-        var summary  = reader.GetString(3);
+        var date       = reader.GetString(0);
+        var docType    = reader.GetString(1);
+        var topic      = reader.GetString(2);
+        var summary    = reader.GetString(3);
+        var reflection = reader.IsDBNull(6) ? "" : reader.GetString(6);
 
         List<string> highlights, keywords;
         try { highlights = JsonSerializer.Deserialize<List<string>>(reader.GetString(4)) ?? []; } catch { highlights = []; }
@@ -220,6 +235,20 @@ public class LearningRecordsService(IConfiguration config)
             sb.AppendLine();
             sb.AppendLine("## คำสำคัญ");
             foreach (var k in keywords) sb.AppendLine($"- {k}");
+        }
+        if (!string.IsNullOrWhiteSpace(reflection))
+        {
+            var reflectionLabel = reflection switch
+            {
+                "Understood"           => "🟢 อ๋อ เข้าใจแล้ว",
+                "StartingToUnderstand" => "🟡 เริ่มเข้าใจแล้ว",
+                "StillConfused"        => "🟠 ยังงงอยู่",
+                "NotUnderstand"        => "🔴 ไม่เข้าใจเลย",
+                _ => reflection,
+            };
+            sb.AppendLine();
+            sb.AppendLine("## ความรู้สึกหลังเรียน");
+            sb.AppendLine(reflectionLabel);
         }
 
         var safeTopic = string.Concat(topic.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));

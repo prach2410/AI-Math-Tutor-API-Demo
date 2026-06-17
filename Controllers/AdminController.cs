@@ -39,6 +39,7 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             keywords     = r.Keywords,
             createdAt    = r.CreatedAt,
             downloadedAt = r.DownloadedAt,
+            reflection   = r.Reflection,
         });
 
         // Filter in-memory: C# has no string comparison operators; dataset is small (personal use)

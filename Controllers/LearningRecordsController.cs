@@ -36,4 +36,13 @@ public class LearningRecordsController(LearningRecordsService service) : Control
         var bytes = Encoding.UTF8.GetBytes(result.Value.Markdown);
         return File(bytes, "text/markdown; charset=utf-8", result.Value.Filename);
     }
+
+    [HttpPatch("{id}/reflection")]
+    public async Task<IActionResult> SetReflection(string id, [FromBody] SetReflectionRequest req)
+    {
+        await service.SetReflectionAsync(id, req.Reflection);
+        return NoContent();
+    }
 }
+
+public record SetReflectionRequest(string Reflection);

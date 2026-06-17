@@ -95,6 +95,7 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN FigureCorrection  TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN Mode             TEXT NOT NULL DEFAULT 'guide_first'"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN SolveFirstCount  INTEGER NOT NULL DEFAULT 0"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE LearningRecords ADD COLUMN Reflection TEXT"); } catch { }
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS LearningRecords (
