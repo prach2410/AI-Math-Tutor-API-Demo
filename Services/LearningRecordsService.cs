@@ -89,6 +89,40 @@ public class LearningRecordsService(IConfiguration config)
             .ToList();
     }
 
+    public async Task<List<LearningRecordEntry>> GetByDateAsync(string date)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt
+            FROM   LearningRecords
+            WHERE  Date = $date
+            ORDER  BY CreatedAt DESC
+            """;
+        cmd.Parameters.AddWithValue("$date", date);
+
+        var entries = new List<LearningRecordEntry>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            List<string> kw;
+            try { kw = JsonSerializer.Deserialize<List<string>>(reader.GetString(5)) ?? []; }
+            catch { kw = []; }
+
+            entries.Add(new LearningRecordEntry(
+                Id:           reader.GetString(0),
+                Date:         reader.GetString(1),
+                DocumentType: reader.GetString(2),
+                Topic:        reader.GetString(3),
+                Summary:      reader.GetString(4),
+                Keywords:     kw,
+                CreatedAt:    reader.GetString(6)
+            ));
+        }
+        return entries;
+    }
+
     public async Task<(string Markdown, string Filename)?> ExportMarkdownAsync(string id)
     {
         using var conn = new SqliteConnection($"Data Source={_dbPath}");
