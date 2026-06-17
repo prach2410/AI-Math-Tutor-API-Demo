@@ -1,5 +1,6 @@
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Cryptography;
 
 namespace backend.Controllers;
 
@@ -34,11 +35,37 @@ public class LearningJournalController(
             imageData.Add((ms.ToArray(), img.ContentType));
         }
 
+        // Compute combined image hash (order-independent: sort individual hashes before combining)
+        var sortedHashes = imageData
+            .Select(img => Convert.ToHexString(SHA256.HashData(img.Bytes)).ToLowerInvariant())
+            .OrderBy(h => h);
+        var imageHash = Convert.ToHexString(
+            SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Concat(sortedHashes)))
+        ).ToLowerInvariant();
+
+        // Check duplicate BEFORE calling vision API (saves cost)
+        var existing = await records.ExistsByHashAsync(imageHash);
+        if (existing.HasValue)
+        {
+            return Ok(new
+            {
+                readable     = true,
+                message      = "บันทึกไว้แล้ว",
+                documentType = "",
+                topic        = "",
+                summary      = "",
+                highlights   = Array.Empty<string>(),
+                keywords     = Array.Empty<string>(),
+                duplicate    = true,
+                existingDate = existing.Value.Date,
+            });
+        }
+
         var result = await service.AnalyzeAsync(imageData);
 
         if (result.Readable)
         {
-            try { await records.SaveAsync(result); } catch { /* don't break analysis on save failure */ }
+            try { await records.SaveAsync(result, imageHash); } catch { /* don't break analysis on save failure */ }
         }
 
         return Ok(new
@@ -50,6 +77,8 @@ public class LearningJournalController(
             summary      = result.Summary,
             highlights   = result.Highlights,
             keywords     = result.Keywords,
+            duplicate    = false,
+            existingDate = "",
         });
     }
 }

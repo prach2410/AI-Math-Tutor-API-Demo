@@ -25,7 +25,20 @@ public class LearningRecordsService(IConfiguration config)
         ?? Environment.GetEnvironmentVariable("DatabasePath")
         ?? "learning_sessions.db";
 
-    public async Task SaveAsync(LearningJournalAnalysis analysis)
+    public async Task<(string Id, string Date)?> ExistsByHashAsync(string hash)
+    {
+        if (string.IsNullOrWhiteSpace(hash)) return null;
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Date FROM LearningRecords WHERE ImageHash = $hash LIMIT 1";
+        cmd.Parameters.AddWithValue("$hash", hash);
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return (reader.GetString(0), reader.GetString(1));
+    }
+
+    public async Task SaveAsync(LearningJournalAnalysis analysis, string imageHash = "")
     {
         var id          = Guid.NewGuid().ToString();
         var date        = DateTime.UtcNow.ToString("yyyy-MM-dd");
@@ -38,8 +51,8 @@ public class LearningRecordsService(IConfiguration config)
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO LearningRecords
-                (Id, Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, CreatedAt)
-            VALUES ($id, $date, $docType, $topic, $summary, $hl, $kw, $createdAt)
+                (Id, Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, CreatedAt, ImageHash)
+            VALUES ($id, $date, $docType, $topic, $summary, $hl, $kw, $createdAt, $hash)
             """;
         cmd.Parameters.AddWithValue("$id",        id);
         cmd.Parameters.AddWithValue("$date",      date);
@@ -49,6 +62,7 @@ public class LearningRecordsService(IConfiguration config)
         cmd.Parameters.AddWithValue("$hl",        hl);
         cmd.Parameters.AddWithValue("$kw",        kw);
         cmd.Parameters.AddWithValue("$createdAt", createdAt);
+        cmd.Parameters.AddWithValue("$hash",      imageHash);
         await cmd.ExecuteNonQueryAsync();
     }
 
