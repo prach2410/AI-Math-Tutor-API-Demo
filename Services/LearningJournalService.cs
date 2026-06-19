@@ -10,7 +10,10 @@ public record LearningJournalAnalysis(
     string Topic,
     string Summary,
     List<string> Highlights,
-    List<string> Keywords
+    List<string> Keywords,
+    string VisionModel = "",
+    string StartedAt = "",
+    string EndedAt = ""
 );
 
 public class LearningJournalService
@@ -31,15 +34,21 @@ public class LearningJournalService
         return new ClaudeLearningJournalAnalyzer(anthropicKey);
     }
 
-    public Task<LearningJournalAnalysis> AnalyzeAsync(
+    public async Task<LearningJournalAnalysis> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images)
-        => Analyzer.AnalyzeAsync(images);
+    {
+        var startedAt = DateTime.UtcNow.ToString("O");
+        var result    = await Analyzer.AnalyzeAsync(images);
+        var endedAt   = DateTime.UtcNow.ToString("O");
+        return result with { VisionModel = Analyzer.ModelName, StartedAt = startedAt, EndedAt = endedAt };
+    }
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────
 
 internal interface ILearningJournalAnalyzer
 {
+    string ModelName { get; }
     Task<LearningJournalAnalysis> AnalyzeAsync(IReadOnlyList<(byte[] Bytes, string MediaType)> images);
 }
 
@@ -138,6 +147,7 @@ internal static class JournalParser
 internal class ClaudeLearningJournalAnalyzer(string apiKey) : ILearningJournalAnalyzer
 {
     private static readonly HttpClient Http = new();
+    public string ModelName => "claude-opus-4-8";
 
     public async Task<LearningJournalAnalysis> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images)
@@ -189,6 +199,7 @@ internal class OllamaLearningJournalAnalyzer(string apiKey, string model) : ILea
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(300) };
     private readonly string _endpoint = "https://dgx.toptier.co.th/ollama/api/chat";
+    public string ModelName => model;
 
     public async Task<LearningJournalAnalysis> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images)

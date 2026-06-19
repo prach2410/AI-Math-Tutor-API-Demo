@@ -12,7 +12,10 @@ public record LearningRecordEntry(
     List<string> Keywords,
     string CreatedAt,
     string DownloadedAt = "",
-    string Reflection = ""
+    string Reflection = "",
+    string VisionModel = "",
+    string AnalysisStartedAt = "",
+    string AnalysisEndedAt = ""
 );
 
 public record DailyLogGroup(
@@ -42,29 +45,34 @@ public class LearningRecordsService(IConfiguration config)
 
     public async Task<string> SaveAsync(LearningJournalAnalysis analysis, string imageHash = "")
     {
-        var id          = Guid.NewGuid().ToString();
-        var date        = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        var createdAt   = DateTime.UtcNow.ToString("O");
-        var kw          = JsonSerializer.Serialize(analysis.Keywords);
-        var hl          = JsonSerializer.Serialize(analysis.Highlights);
+        var id        = Guid.NewGuid().ToString();
+        var date      = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var createdAt = DateTime.UtcNow.ToString("O");
+        var kw        = JsonSerializer.Serialize(analysis.Keywords);
+        var hl        = JsonSerializer.Serialize(analysis.Highlights);
 
         using var conn = new SqliteConnection($"Data Source={_dbPath}");
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO LearningRecords
-                (Id, Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, CreatedAt, ImageHash)
-            VALUES ($id, $date, $docType, $topic, $summary, $hl, $kw, $createdAt, $hash)
+                (Id, Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, CreatedAt, ImageHash,
+                 VisionModel, AnalysisStartedAt, AnalysisEndedAt)
+            VALUES ($id, $date, $docType, $topic, $summary, $hl, $kw, $createdAt, $hash,
+                    $visionModel, $startedAt, $endedAt)
             """;
-        cmd.Parameters.AddWithValue("$id",        id);
-        cmd.Parameters.AddWithValue("$date",      date);
-        cmd.Parameters.AddWithValue("$docType",   analysis.DocumentType);
-        cmd.Parameters.AddWithValue("$topic",     analysis.Topic);
-        cmd.Parameters.AddWithValue("$summary",   analysis.Summary);
-        cmd.Parameters.AddWithValue("$hl",        hl);
-        cmd.Parameters.AddWithValue("$kw",        kw);
-        cmd.Parameters.AddWithValue("$createdAt", createdAt);
-        cmd.Parameters.AddWithValue("$hash",      imageHash);
+        cmd.Parameters.AddWithValue("$id",          id);
+        cmd.Parameters.AddWithValue("$date",        date);
+        cmd.Parameters.AddWithValue("$docType",     analysis.DocumentType);
+        cmd.Parameters.AddWithValue("$topic",       analysis.Topic);
+        cmd.Parameters.AddWithValue("$summary",     analysis.Summary);
+        cmd.Parameters.AddWithValue("$hl",          hl);
+        cmd.Parameters.AddWithValue("$kw",          kw);
+        cmd.Parameters.AddWithValue("$createdAt",   createdAt);
+        cmd.Parameters.AddWithValue("$hash",        imageHash);
+        cmd.Parameters.AddWithValue("$visionModel", analysis.VisionModel);
+        cmd.Parameters.AddWithValue("$startedAt",   analysis.StartedAt);
+        cmd.Parameters.AddWithValue("$endedAt",     analysis.EndedAt);
         await cmd.ExecuteNonQueryAsync();
         return id;
     }
@@ -123,7 +131,8 @@ public class LearningRecordsService(IConfiguration config)
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt, DownloadedAt, Reflection
+            SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt, DownloadedAt, Reflection,
+                   VisionModel, AnalysisStartedAt, AnalysisEndedAt
             FROM   LearningRecords
             WHERE  Date >= $start AND Date <= $end
             ORDER  BY Date ASC, CreatedAt ASC
@@ -140,15 +149,18 @@ public class LearningRecordsService(IConfiguration config)
             catch { kw = []; }
 
             entries.Add(new LearningRecordEntry(
-                Id:           reader.GetString(0),
-                Date:         reader.GetString(1),
-                DocumentType: reader.GetString(2),
-                Topic:        reader.GetString(3),
-                Summary:      reader.GetString(4),
-                Keywords:     kw,
-                CreatedAt:    reader.GetString(6),
-                DownloadedAt: reader.IsDBNull(7) ? "" : reader.GetString(7),
-                Reflection:   reader.IsDBNull(8) ? "" : reader.GetString(8)
+                Id:               reader.GetString(0),
+                Date:             reader.GetString(1),
+                DocumentType:     reader.GetString(2),
+                Topic:            reader.GetString(3),
+                Summary:          reader.GetString(4),
+                Keywords:         kw,
+                CreatedAt:        reader.GetString(6),
+                DownloadedAt:     reader.IsDBNull(7)  ? "" : reader.GetString(7),
+                Reflection:       reader.IsDBNull(8)  ? "" : reader.GetString(8),
+                VisionModel:      reader.IsDBNull(9)  ? "" : reader.GetString(9),
+                AnalysisStartedAt:reader.IsDBNull(10) ? "" : reader.GetString(10),
+                AnalysisEndedAt:  reader.IsDBNull(11) ? "" : reader.GetString(11)
             ));
         }
         return entries;
@@ -194,7 +206,8 @@ public class LearningRecordsService(IConfiguration config)
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, Reflection
+            SELECT Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, Reflection,
+                   VisionModel, AnalysisStartedAt, AnalysisEndedAt
             FROM   LearningRecords
             WHERE  Id = $id
             """;
@@ -203,11 +216,14 @@ public class LearningRecordsService(IConfiguration config)
         using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
 
-        var date       = reader.GetString(0);
-        var docType    = reader.GetString(1);
-        var topic      = reader.GetString(2);
-        var summary    = reader.GetString(3);
-        var reflection = reader.IsDBNull(6) ? "" : reader.GetString(6);
+        var date        = reader.GetString(0);
+        var docType     = reader.GetString(1);
+        var topic       = reader.GetString(2);
+        var summary     = reader.GetString(3);
+        var reflection  = reader.IsDBNull(6) ? "" : reader.GetString(6);
+        var visionModel = reader.IsDBNull(7) ? "" : reader.GetString(7);
+        var startedAt   = reader.IsDBNull(8) ? "" : reader.GetString(8);
+        var endedAt     = reader.IsDBNull(9) ? "" : reader.GetString(9);
 
         List<string> highlights, keywords;
         try { highlights = JsonSerializer.Deserialize<List<string>>(reader.GetString(4)) ?? []; } catch { highlights = []; }
@@ -249,6 +265,17 @@ public class LearningRecordsService(IConfiguration config)
             sb.AppendLine();
             sb.AppendLine("## ความรู้สึกหลังเรียน");
             sb.AppendLine(reflectionLabel);
+        }
+
+        if (!string.IsNullOrWhiteSpace(visionModel))
+        {
+            var durationStr = "";
+            if (DateTime.TryParse(startedAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var s) &&
+                DateTime.TryParse(endedAt,   null, System.Globalization.DateTimeStyles.RoundtripKind, out var e))
+                durationStr = $" · ใช้เวลา: {(e - s).TotalSeconds:F1}s";
+            sb.AppendLine();
+            sb.AppendLine($"---");
+            sb.AppendLine($"วิเคราะห์ด้วย: {visionModel}{durationStr}");
         }
 
         var safeTopic = string.Concat(topic.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
