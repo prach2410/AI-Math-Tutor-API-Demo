@@ -11,11 +11,15 @@ public record ProblemItem(int Index, string ProblemText, string Latex, string To
 public record HomeworkAnalysisResult(
     List<ProblemItem> Problems,
     bool Readable,
-    string Message
+    string Message,
+    string VisionModel = "",
+    string StartedAt = "",
+    string EndedAt = ""
 );
 
 internal interface IHomeworkAnalyzer
 {
+    string ModelName { get; }
     Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
         string fileName = "");
@@ -54,23 +58,28 @@ public class HomeworkAnalysisService(AppDbContext db)
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
         string fileName = "")
     {
+        var startedAt = DateTime.UtcNow.ToString("O");
         var (result, reason, rawResponse) = await Analyzer.AnalyzeAsync(images, fileName);
+        var endedAt = DateTime.UtcNow.ToString("O");
 
         var first = result.Problems.FirstOrDefault();
         db.HomeworkReads.Add(new HomeworkReadEntity
         {
-            Filename    = fileName,
-            CreatedAt   = DateTime.UtcNow.ToString("O"),
-            Readable    = result.Readable,
-            Reason      = reason,
-            ProblemText = JsonSerializer.Serialize(result.Problems),
-            Latex       = first?.Latex ?? "",
-            Topic       = first?.Topic ?? "",
-            RawResponse = rawResponse,
+            Filename          = fileName,
+            CreatedAt         = DateTime.UtcNow.ToString("O"),
+            Readable          = result.Readable,
+            Reason            = reason,
+            ProblemText       = JsonSerializer.Serialize(result.Problems),
+            Latex             = first?.Latex ?? "",
+            Topic             = first?.Topic ?? "",
+            RawResponse       = rawResponse,
+            VisionModel       = Analyzer.ModelName,
+            AnalysisStartedAt = startedAt,
+            AnalysisEndedAt   = endedAt,
         });
         await db.SaveChangesAsync();
 
-        return result;
+        return result with { VisionModel = Analyzer.ModelName, StartedAt = startedAt, EndedAt = endedAt };
     }
 
     public Task<List<HomeworkReadEntity>> GetRecentAsync(int limit = 50)
@@ -84,6 +93,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
 {
     private static readonly HttpClient Http = new();
     private readonly string _apiKey;
+    public string ModelName => "claude-opus-4-8";
 
     internal const string Prompt = """
         อ่านโจทย์คณิตศาสตร์จากภาพ แล้วตอบเป็น JSON เท่านั้น ห้ามเพิ่มข้อความนอกเหนือจาก JSON
@@ -248,6 +258,7 @@ internal class OllamaHomeworkAnalyzer : IHomeworkAnalyzer
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _endpoint;
+    public string ModelName => _model;
 
     public OllamaHomeworkAnalyzer(string apiKey, string model = "gemma4:26b",
         string endpoint = "https://dgx.toptier.co.th/ollama/api/chat")
@@ -324,6 +335,7 @@ internal class OllamaHomeworkAnalyzer : IHomeworkAnalyzer
 internal class OpenAiHomeworkAnalyzer(string apiKey, string model = "gpt-4o-mini") : IHomeworkAnalyzer
 {
     private static readonly HttpClient Http = new();
+    public string ModelName => model;
 
     public async Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
@@ -384,6 +396,8 @@ internal class OpenAiHomeworkAnalyzer(string apiKey, string model = "gpt-4o-mini
 
 internal class MockHomeworkAnalyzer : IHomeworkAnalyzer
 {
+    public string ModelName => "mock";
+
     public Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
         string fileName = "")

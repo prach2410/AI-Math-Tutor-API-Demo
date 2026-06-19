@@ -99,6 +99,12 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE LearningRecords ADD COLUMN VisionModel        TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE LearningRecords ADD COLUMN AnalysisStartedAt  TEXT"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE LearningRecords ADD COLUMN AnalysisEndedAt    TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN VisionModel        TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN AnalysisStartedAt  TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN AnalysisEndedAt    TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN VisionModel           TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN AnalysisStartedAt     TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN AnalysisEndedAt       TEXT NOT NULL DEFAULT ''"); } catch { }
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS LearningRecords (

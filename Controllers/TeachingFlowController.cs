@@ -7,8 +7,10 @@ namespace backend.Controllers;
 [Route("api/teaching")]
 public class TeachingFlowController(TeachingFlowService service) : ControllerBase
 {
-    public record StartRequest(string ProblemText, string Latex, string Topic, bool HasFigure);
-    public record SolveRequest(string ProblemText, string Latex, string Topic);
+    public record StartRequest(string ProblemText, string Latex, string Topic, bool HasFigure,
+        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "");
+    public record SolveRequest(string ProblemText, string Latex, string Topic,
+        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "");
     public record AnswerRequest(string Answer);
     public record HintRequest(int Level);
     public record ConfirmFigureRequest(string StudentNote);
@@ -21,7 +23,8 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
 
         try
         {
-            var result = await service.SolveAsync(req.ProblemText, req.Latex, req.Topic);
+            var result = await service.SolveAsync(req.ProblemText, req.Latex, req.Topic,
+                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt);
             return Ok(new
             {
                 sessionId       = result.SessionId,
@@ -43,7 +46,8 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
 
         try
         {
-            var result = await service.StartAsync(req.ProblemText, req.Latex, req.Topic, req.HasFigure);
+            var result = await service.StartAsync(req.ProblemText, req.Latex, req.Topic, req.HasFigure,
+                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt);
 
             if (result.NeedsConfirm)
             {

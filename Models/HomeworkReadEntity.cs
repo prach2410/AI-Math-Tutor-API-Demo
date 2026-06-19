@@ -11,4 +11,7 @@ public class HomeworkReadEntity
     public string Latex { get; set; } = "";
     public string Topic { get; set; } = "";
     public string RawResponse { get; set; } = "";
+    public string VisionModel { get; set; } = "";
+    public string AnalysisStartedAt { get; set; } = "";
+    public string AnalysisEndedAt { get; set; } = "";
 }

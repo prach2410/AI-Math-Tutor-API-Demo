@@ -52,14 +52,17 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
 
         var hwList = hwSessions.Select(s => new
         {
-            id           = s.Id,
-            date         = s.CreatedAt.Length >= 10 ? s.CreatedAt[..10] : mondayStr,
-            topic        = s.Topic,
-            problemText  = s.ProblemText,
-            status       = s.Status,
-            mode         = s.Mode,
-            createdAt    = s.CreatedAt,
-            downloadedAt = s.DownloadedAt,
+            id                = s.Id,
+            date              = s.CreatedAt.Length >= 10 ? s.CreatedAt[..10] : mondayStr,
+            topic             = s.Topic,
+            problemText       = s.ProblemText,
+            status            = s.Status,
+            mode              = s.Mode,
+            createdAt         = s.CreatedAt,
+            downloadedAt      = s.DownloadedAt,
+            visionModel       = s.VisionModel,
+            analysisStartedAt = s.AnalysisStartedAt,
+            analysisEndedAt   = s.AnalysisEndedAt,
         });
 
         return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkSessions = hwList });
@@ -114,6 +117,17 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
         };
         sb.AppendLine("## สรุป");
         sb.AppendLine($"สถานะ: {statusLabel} · mode: {session.Mode}");
+
+        if (!string.IsNullOrWhiteSpace(session.VisionModel))
+        {
+            var durationMs = 0.0;
+            if (DateTime.TryParse(session.AnalysisStartedAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var tStart) &&
+                DateTime.TryParse(session.AnalysisEndedAt,   null, System.Globalization.DateTimeStyles.RoundtripKind, out var tEnd))
+                durationMs = (tEnd - tStart).TotalMilliseconds;
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine($"วิเคราะห์ด้วย: {session.VisionModel} · ใช้เวลา: {(durationMs / 1000.0):F1}s");
+        }
 
         var safeTopic = string.Concat(
             session.Topic.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));

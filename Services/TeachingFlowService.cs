@@ -161,19 +161,23 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         """;
 
     public async Task<StartTeachingResult> StartAsync(
-        string problemText, string latex, string topic, bool hasFigure)
+        string problemText, string latex, string topic, bool hasFigure,
+        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "")
     {
         var session = new TeachingSessionEntity
         {
-            Id          = Guid.NewGuid().ToString(),
-            ProblemText = problemText,
-            Latex       = latex,
-            Topic       = topic,
-            HasFigure   = hasFigure,
-            StepsJson   = "[]",
-            CurrentStep = 1,
-            Status      = "in_progress",
-            CreatedAt   = DateTime.UtcNow.ToString("O"),
+            Id                = Guid.NewGuid().ToString(),
+            ProblemText       = problemText,
+            Latex             = latex,
+            Topic             = topic,
+            HasFigure         = hasFigure,
+            StepsJson         = "[]",
+            CurrentStep       = 1,
+            Status            = "in_progress",
+            CreatedAt         = DateTime.UtcNow.ToString("O"),
+            VisionModel       = visionModel,
+            AnalysisStartedAt = analysisStartedAt,
+            AnalysisEndedAt   = analysisEndedAt,
         };
 
         if (hasFigure)
@@ -426,7 +430,8 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         }
     }
 
-    public async Task<SolveResult> SolveAsync(string problemText, string latex, string topic)
+    public async Task<SolveResult> SolveAsync(string problemText, string latex, string topic,
+        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "")
     {
         var prompt = SolvePrompt
             .Replace("{problemText}", problemText)
@@ -438,15 +443,18 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 
         var session = new TeachingSessionEntity
         {
-            Id              = Guid.NewGuid().ToString(),
-            ProblemText     = problemText,
-            Latex           = latex,
-            Topic           = topic,
-            Mode            = "solve_first",
-            SolveFirstCount = 1,
-            StepsJson       = "[]",
-            Status          = "done",
-            CreatedAt       = DateTime.UtcNow.ToString("O"),
+            Id                = Guid.NewGuid().ToString(),
+            ProblemText       = problemText,
+            Latex             = latex,
+            Topic             = topic,
+            Mode              = "solve_first",
+            SolveFirstCount   = 1,
+            StepsJson         = "[]",
+            Status            = "done",
+            CreatedAt         = DateTime.UtcNow.ToString("O"),
+            VisionModel       = visionModel,
+            AnalysisStartedAt = analysisStartedAt,
+            AnalysisEndedAt   = analysisEndedAt,
         };
         db.TeachingSessions.Add(session);
         await db.SaveChangesAsync();

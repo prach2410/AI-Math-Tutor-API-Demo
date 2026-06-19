@@ -17,4 +17,7 @@ public class TeachingSessionEntity
     public string Mode { get; set; } = "guide_first";  // guide_first | solve_first
     public int SolveFirstCount { get; set; }
     public string DownloadedAt { get; set; } = "";
+    public string VisionModel { get; set; } = "";
+    public string AnalysisStartedAt { get; set; } = "";
+    public string AnalysisEndedAt { get; set; } = "";
 }
