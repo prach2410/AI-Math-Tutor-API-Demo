@@ -43,6 +43,26 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
         });
 
         // Filter in-memory: C# has no string comparison operators; dataset is small (personal use)
+        var hrEntries = (await db.HomeworkReads.ToListAsync())
+            .Where(r => r.CreatedAt.Length >= 10
+                     && string.Compare(r.CreatedAt[..10], mondayStr, StringComparison.Ordinal) >= 0
+                     && string.Compare(r.CreatedAt[..10], sundayStr, StringComparison.Ordinal) <= 0)
+            .OrderBy(r => r.CreatedAt)
+            .ToList();
+
+        var hrList = hrEntries.Select(r => new
+        {
+            id                = r.Id,
+            date              = r.CreatedAt.Length >= 10 ? r.CreatedAt[..10] : mondayStr,
+            topic             = r.Topic,
+            readable          = r.Readable,
+            reason            = r.Reason,
+            createdAt         = r.CreatedAt,
+            visionModel       = r.VisionModel,
+            analysisStartedAt = r.AnalysisStartedAt,
+            analysisEndedAt   = r.AnalysisEndedAt,
+        });
+
         var hwSessions = (await db.TeachingSessions.ToListAsync())
             .Where(s => s.CreatedAt.Length >= 10
                      && string.Compare(s.CreatedAt[..10], mondayStr,     StringComparison.Ordinal) >= 0
@@ -65,7 +85,7 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             analysisEndedAt   = s.AnalysisEndedAt,
         });
 
-        return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkSessions = hwList });
+        return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkReads = hrList, homeworkSessions = hwList });
     }
 
     [HttpGet("export/homework/{id}")]
