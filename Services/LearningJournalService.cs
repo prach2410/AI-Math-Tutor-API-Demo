@@ -30,6 +30,13 @@ public class LearningJournalService
             return new OllamaLearningJournalAnalyzer(key, model);
         }
 
+        if (provider == "OpenAI")
+        {
+            var key   = Environment.GetEnvironmentVariable("LLM__OpenAI__ApiKey") ?? "";
+            var model = Environment.GetEnvironmentVariable("LLM__OpenAI__VisionModel") ?? "gpt-4o-mini";
+            return new OpenAiLearningJournalAnalyzer(key, model);
+        }
+
         var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
         return new ClaudeLearningJournalAnalyzer(anthropicKey);
     }
@@ -62,8 +69,9 @@ internal static class JournalPrompt
         - "Whiteboard" : กระดานในห้องเรียน ครูเขียน
         - "Notebook"   : สมุดจดของนักเรียน
         - "Textbook"   : หนังสือเรียน/ตำราเรียน
-        - "Worksheet"  : ใบงาน/แบบฝึกหัด
-        - "Homework"   : การบ้านหรือโจทย์ที่ได้รับมา
+        - "Worksheet"  : ใบงาน/แบบฝึกหัดในห้องเรียน (แม้จะเป็นโจทย์คณิตก็ตาม)
+        - "Homework"   : การบ้านที่ครูสั่งให้ทำที่บ้าน (ระบุชัดว่า "การบ้าน" หรือ "ส่งพรุ่งนี้")
+        กฎ: ถ้าไม่แน่ใจ → เลือก Worksheet (ใบงานมีโอกาสสูงกว่าในบริบทห้องเรียน)
 
         รูปแบบที่ต้องการ:
         {
@@ -184,6 +192,65 @@ internal class ClaudeLearningJournalAnalyzer(string apiKey) : ILearningJournalAn
 
             using var doc = JsonDocument.Parse(raw);
             var text = doc.RootElement.GetProperty("content")[0].GetProperty("text").GetString() ?? "";
+            return JournalParser.Parse(text);
+        }
+        catch
+        {
+            return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", [], []);
+        }
+    }
+}
+
+// ── OpenAI ───────────────────────────────────────────────────────────────────
+
+internal class OpenAiLearningJournalAnalyzer(string apiKey, string model) : ILearningJournalAnalyzer
+{
+    private static readonly HttpClient Http = new();
+    public string ModelName => model;
+
+    public async Task<LearningJournalAnalysis> AnalyzeAsync(
+        IReadOnlyList<(byte[] Bytes, string MediaType)> images)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return new LearningJournalAnalysis(false, "ไม่พบ LLM__OpenAI__ApiKey", "", "", "", [], []);
+
+        var contentBlocks = new List<object>();
+        foreach (var img in images)
+        {
+            var base64 = Convert.ToBase64String(img.Bytes);
+            contentBlocks.Add(new
+            {
+                type      = "image_url",
+                image_url = new { url = $"data:{img.MediaType};base64,{base64}" }
+            });
+        }
+        contentBlocks.Add(new { type = "text", text = JournalPrompt.Text });
+
+        var body = new
+        {
+            model,
+            max_tokens = 4096,
+            messages   = new[] { new { role = "user", content = contentBlocks } }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+        request.Headers.Add("Authorization", $"Bearer {apiKey}");
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        try
+        {
+            using var response = await Http.SendAsync(request);
+            var raw = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return new LearningJournalAnalysis(false, "ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่", "", "", "", [], []);
+
+            using var doc = JsonDocument.Parse(raw);
+            var text = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString() ?? "";
             return JournalParser.Parse(text);
         }
         catch
