@@ -50,6 +50,13 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             .OrderBy(r => r.CreatedAt)
             .ToList();
 
+        var allSessions = await db.TeachingSessions.ToListAsync();
+
+        var taughtKeys = allSessions
+            .Where(s => !string.IsNullOrEmpty(s.AnalysisStartedAt) && !string.IsNullOrEmpty(s.AnalysisEndedAt))
+            .Select(s => (s.AnalysisStartedAt, s.AnalysisEndedAt))
+            .ToHashSet();
+
         var hrList = hrEntries.Select(r => new
         {
             id                = r.Id,
@@ -65,13 +72,6 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
                              && !string.IsNullOrEmpty(r.AnalysisEndedAt)
                              && taughtKeys.Contains((r.AnalysisStartedAt, r.AnalysisEndedAt)),
         });
-
-        var allSessions = await db.TeachingSessions.ToListAsync();
-
-        var taughtKeys = allSessions
-            .Where(s => !string.IsNullOrEmpty(s.AnalysisStartedAt) && !string.IsNullOrEmpty(s.AnalysisEndedAt))
-            .Select(s => (s.AnalysisStartedAt, s.AnalysisEndedAt))
-            .ToHashSet();
 
         var hwSessions = allSessions
             .Where(s => s.CreatedAt.Length >= 10
