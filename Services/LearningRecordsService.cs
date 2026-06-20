@@ -200,6 +200,17 @@ public class LearningRecordsService(IConfiguration config)
         return entries;
     }
 
+    public async Task<bool> DeleteAsync(string id)
+    {
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM LearningRecords WHERE Id = $id";
+        cmd.Parameters.AddWithValue("$id", id);
+        var rows = await cmd.ExecuteNonQueryAsync();
+        return rows > 0;
+    }
+
     public async Task<(string Markdown, string Filename)?> ExportMarkdownAsync(string id)
     {
         using var conn = new SqliteConnection($"Data Source={_dbPath}");

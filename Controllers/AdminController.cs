@@ -98,6 +98,33 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
         return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkReads = hrList, homeworkSessions = hwList });
     }
 
+    [HttpDelete("learning-record/{id}")]
+    public async Task<IActionResult> DeleteLearningRecord(string id)
+    {
+        var deleted = await learningRecords.DeleteAsync(id);
+        return deleted ? NoContent() : NotFound();
+    }
+
+    [HttpDelete("homework-read/{id:int}")]
+    public async Task<IActionResult> DeleteHomeworkRead(int id)
+    {
+        var e = await db.HomeworkReads.FindAsync(id);
+        if (e is null) return NotFound();
+        db.HomeworkReads.Remove(e);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("homework-session/{id}")]
+    public async Task<IActionResult> DeleteHomeworkSession(string id)
+    {
+        var e = await db.TeachingSessions.FindAsync(id);
+        if (e is null) return NotFound();
+        db.TeachingSessions.Remove(e);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpGet("export/homework/{id}")]
     public async Task<IActionResult> ExportHomework(string id)
     {
