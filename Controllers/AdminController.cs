@@ -61,9 +61,19 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             visionModel       = r.VisionModel,
             analysisStartedAt = r.AnalysisStartedAt,
             analysisEndedAt   = r.AnalysisEndedAt,
+            taught            = !string.IsNullOrEmpty(r.AnalysisStartedAt)
+                             && !string.IsNullOrEmpty(r.AnalysisEndedAt)
+                             && taughtKeys.Contains((r.AnalysisStartedAt, r.AnalysisEndedAt)),
         });
 
-        var hwSessions = (await db.TeachingSessions.ToListAsync())
+        var allSessions = await db.TeachingSessions.ToListAsync();
+
+        var taughtKeys = allSessions
+            .Where(s => !string.IsNullOrEmpty(s.AnalysisStartedAt) && !string.IsNullOrEmpty(s.AnalysisEndedAt))
+            .Select(s => (s.AnalysisStartedAt, s.AnalysisEndedAt))
+            .ToHashSet();
+
+        var hwSessions = allSessions
             .Where(s => s.CreatedAt.Length >= 10
                      && string.Compare(s.CreatedAt[..10], mondayStr,     StringComparison.Ordinal) >= 0
                      && string.Compare(s.CreatedAt[..10], sundayStr,     StringComparison.Ordinal) <= 0)
