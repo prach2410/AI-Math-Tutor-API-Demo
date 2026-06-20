@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -56,6 +57,41 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
                 hasFigure   = p.HasFigure,
             }),
         });
+    }
+
+    [HttpGet("reads")]
+    public async Task<IActionResult> GetReads([FromQuery] int limit = 30)
+    {
+        var entries = await service.GetRecentAsync(limit);
+        var result = new List<object>();
+        foreach (var e in entries)
+        {
+            if (!e.Readable) continue;
+            List<ProblemItem>? problems;
+            try { problems = JsonSerializer.Deserialize<List<ProblemItem>>(e.ProblemText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+            catch { continue; }
+            if (problems == null || problems.Count == 0) continue;
+
+            result.Add(new
+            {
+                id                = e.Id,
+                createdAt         = e.CreatedAt,
+                topic             = e.Topic,
+                problemCount      = problems.Count,
+                visionModel       = e.VisionModel,
+                analysisStartedAt = e.AnalysisStartedAt,
+                analysisEndedAt   = e.AnalysisEndedAt,
+                problems          = problems.Select(p => new
+                {
+                    index       = p.Index,
+                    problemText = p.ProblemText,
+                    latex       = p.Latex,
+                    topic       = p.Topic,
+                    hasFigure   = p.HasFigure,
+                }),
+            });
+        }
+        return Ok(result);
     }
 
     // ⚠️ ไม่มี auth + เก็บข้อมูลโจทย์ → demo/test เท่านั้น ปิดก่อนเปิดให้นักเรียนจริง
