@@ -115,6 +115,15 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
         return NoContent();
     }
 
+    // debug: ดู raw OCR markdown + qwen structured output เพื่อวินิจฉัย parse failure
+    [HttpGet("homework-read/{id:int}/raw")]
+    public async Task<IActionResult> GetHomeworkReadRaw(int id)
+    {
+        var e = await db.HomeworkReads.FindAsync(id);
+        if (e is null) return NotFound();
+        return Ok(new { e.Id, e.Readable, e.Reason, e.VisionModel, rawLength = e.RawResponse?.Length ?? 0, raw = e.RawResponse });
+    }
+
     [HttpDelete("homework-session/{id}")]
     public async Task<IActionResult> DeleteHomeworkSession(string id)
     {
