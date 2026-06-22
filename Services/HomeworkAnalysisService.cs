@@ -48,6 +48,14 @@ public class HomeworkAnalysisService(AppDbContext db)
             return new OllamaHomeworkAnalyzer(key, model);
         }
 
+        if (visionProvider == "TyphoonPipeline")
+        {
+            var key       = Environment.GetEnvironmentVariable("LLM__LocalAI__ApiKey") ?? "";
+            var ocrModel  = Environment.GetEnvironmentVariable("LLM__Typhoon__OcrModel")  ?? "scb10x/typhoon-ocr1.5-3b:latest";
+            var textModel = Environment.GetEnvironmentVariable("LLM__Typhoon__TextModel") ?? "qwen3.6:latest";
+            return new TyphoonPipelineAnalyzer(key, ocrModel, textModel);
+        }
+
         var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
         if (string.IsNullOrWhiteSpace(anthropicKey))
             return new MockHomeworkAnalyzer();
@@ -337,6 +345,155 @@ internal class OllamaHomeworkAnalyzer : IHomeworkAnalyzer
             var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
             return (errResult, "exception: " + ex.Message, raw);
         }
+    }
+}
+
+// 2-stage pipeline: typhoon-ocr (image → faithful Markdown) → text LLM (Markdown → problems[] JSON)
+// แยกหน้าที่ OCR ↔ structuring เพราะ typhoon เป็น model OCR เฉพาะทาง คืน Markdown ไม่ใช่ JSON
+internal class TyphoonPipelineAnalyzer : IHomeworkAnalyzer
+{
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(300) };
+    private readonly string _apiKey;
+    private readonly string _ocrModel;
+    private readonly string _textModel;
+    private readonly string _endpoint;
+    public string ModelName => $"{_ocrModel} + {_textModel}";
+
+    public TyphoonPipelineAnalyzer(string apiKey, string ocrModel, string textModel,
+        string endpoint = "https://dgx.toptier.co.th/ollama/api/chat")
+    {
+        _apiKey    = apiKey;
+        _ocrModel  = ocrModel;
+        _textModel = textModel;
+        _endpoint  = endpoint;
+    }
+
+    // Stage 1 prompt — ตรงจาก typhoon-ocr v1.5 (figure_language = Thai)
+    private const string OcrPrompt = """
+        Extract all text from the image.
+
+        Instructions:
+        - Only return the clean Markdown.
+        - Do not include any explanation or extra text.
+        - You must include all information on the page.
+
+        Formatting Rules:
+        - Tables: Render tables using <table>...</table> in clean HTML format.
+        - Equations: Render equations using LaTeX syntax with inline ($...$) and block ($$...$$).
+        - Images/Charts/Diagrams: Wrap any clearly defined visual areas in:
+
+        <figure>
+        Describe the image's main elements, visible text and its meaning, then a concise overall summary. Describe in Thai.
+        </figure>
+
+        - Page Numbers: Wrap page numbers in <page_number>...</page_number>.
+        - Checkboxes: Use [ ] for unchecked and [x] for checked boxes.
+        """;
+
+    // Stage 2 prompt — ดัดจาก ClaudeHomeworkAnalyzer.Prompt ให้ทำงานบน Markdown (ไม่ใช่ภาพ)
+    private const string StructurePrompt = """
+        ด้านล่างคือข้อความ Markdown ที่ OCR ถอดมาจากภาพแบบฝึกหัด/การบ้านคณิตศาสตร์ (อาจมี noise)
+        งานของคุณ: แยกโจทย์ออกเป็นข้อๆ แล้วตอบเป็น JSON เท่านั้น ห้ามเพิ่มข้อความนอกเหนือจาก JSON
+
+        รูปแบบที่ต้องการ:
+        {
+          "readable": true,
+          "message": "อ่านโจทย์ได้",
+          "problems": [
+            {
+              "index": 1,
+              "problemText": "ข้อความโจทย์ครบถ้วน รวมคำสั่ง เช่น หารากที่สามของ -512",
+              "latex": "สมการ LaTeX (ถ้าไม่มีใส่ string ว่าง)",
+              "topic": "หัวข้อคณิตศาสตร์ เช่น รากที่สาม",
+              "hasFigure": false
+            }
+          ]
+        }
+
+        กฎสำคัญ:
+        - โจทย์มีข้อย่อยซ้อน (กลุ่มใหญ่ × ข้อย่อย 1) 2) 3) …) → แตกเป็น 1 problem ต่อ 1 ข้อย่อยที่แก้ได้
+        - รวมคำสั่งของกลุ่ม (เช่น "หารากที่สาม", "หาค่าของ") เข้ากับ expression ของแต่ละข้อย่อย ให้ problemText สมบูรณ์
+        - ละ noise ออก: <figure>...</figure>, <page_number>, badge/label ตกแต่ง (เช่น อุ่นเครื่อง/ฝึกฝน), หัวเรื่อง
+        - **validation gate:** ข้อที่ไม่มีตัวเลข/expression ที่แก้ได้ (เช่น คำสั่งลอยๆ, หัวข้อ) → อย่าใส่ใน problems[]
+        - hasFigure: true เฉพาะข้อที่อ้างถึงรูปเรขาคณิต/กราฟ/แผนภาพ
+
+        ถ้า Markdown ไม่มีโจทย์คณิตศาสตร์ที่แก้ได้เลย ให้ตอบ:
+        { "readable": false, "message": "ไม่พบโจทย์ที่อ่านได้ กรุณาถ่ายใหม่", "problems": [] }
+
+        === MARKDOWN ===
+
+        """;
+
+    public async Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
+        IReadOnlyList<(byte[] Bytes, string MediaType)> images,
+        string fileName = "")
+    {
+        var raw = "";
+        try
+        {
+            // Stage 1 — OCR
+            var base64Images = images.Select(img => Convert.ToBase64String(img.Bytes)).ToArray();
+            var ocrBody = new
+            {
+                model    = _ocrModel,
+                stream   = false,
+                messages = new[] { new { role = "user", content = OcrPrompt, images = base64Images } },
+                options  = new { temperature = 0.1, top_p = 0.6, repeat_penalty = 1.1, num_predict = 16384 }
+            };
+
+            var (ocrOk, markdown, ocrRaw) = await CallAsync(ocrBody);
+            raw = markdown;
+            if (!ocrOk || string.IsNullOrWhiteSpace(markdown))
+            {
+                var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+                return (errResult, "ocr_failed", ocrRaw);
+            }
+
+            // Stage 2 — Structure
+            var structBody = new
+            {
+                model    = _textModel,
+                stream   = false,
+                messages = new[] { new { role = "user", content = StructurePrompt + markdown } },
+                options  = new { temperature = 0.2, num_predict = 8192 }
+            };
+
+            var (structOk, json, structRaw) = await CallAsync(structBody);
+            raw = markdown + "\n\n---STRUCTURED---\n\n" + (structOk ? json : structRaw);
+            if (!structOk)
+            {
+                var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+                return (errResult, "structure_failed", raw);
+            }
+
+            var (result, reason) = HomeworkResponseParser.ParseResult(json);
+            return (result, reason, raw);
+        }
+        catch (Exception ex)
+        {
+            var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+            return (errResult, "exception: " + ex.Message, raw);
+        }
+    }
+
+    // POST → DGX Ollama /api/chat (stream=false) → message.content
+    private async Task<(bool Ok, string Content, string Raw)> CallAsync(object body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+        request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        using var response = await Http.SendAsync(request);
+        var raw = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+            return (false, "", raw);
+
+        using var doc = JsonDocument.Parse(raw);
+        var content = doc.RootElement.TryGetProperty("message", out var msg) &&
+                      msg.TryGetProperty("content", out var c)
+            ? c.GetString() ?? ""
+            : "";
+        return (true, content, raw);
     }
 }
 
