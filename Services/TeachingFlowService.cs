@@ -444,8 +444,23 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             .Replace("{latex}", latex)
             .Replace("{topic}", topic);
 
-        var raw = await chat.CompleteAsync(prompt);
-        var (steps, understanding) = ParseSolveResponse(raw);
+        List<string> steps = [];
+        string understanding = "";
+        const int maxAttempts = 3;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var raw = await chat.CompleteAsync(prompt);
+            var (ok, parsedSteps, parsedUnderstanding) = ParseSolveResponse(raw);
+            if (ok)
+            {
+                steps = parsedSteps;
+                understanding = parsedUnderstanding;
+                break;
+            }
+            if (attempt == maxAttempts - 1)
+                steps = ["ดูวิธีทำเต็มไม่สำเร็จ กรุณาลองใหม่"];
+        }
 
         var session = new TeachingSessionEntity
         {
@@ -468,7 +483,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         return new SolveResult(session.Id, [.. steps], understanding);
     }
 
-    private static (List<string> Steps, string Understanding) ParseSolveResponse(string raw)
+    private static (bool Ok, List<string> Steps, string Understanding) ParseSolveResponse(string raw)
     {
         try
         {
@@ -486,11 +501,13 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
                 ? u.GetString() ?? ""
                 : "";
 
-            return (steps, understanding);
+            return steps.Count > 0
+                ? (true, steps, understanding)
+                : (false, [], "");
         }
         catch
         {
-            return (["ดูวิธีทำเต็มไม่สำเร็จ กรุณาลองใหม่"], "");
+            return (false, [], "");
         }
     }
 
