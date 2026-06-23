@@ -544,6 +544,9 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
     private static string ExtractJson(string text)
     {
         var t = text.Trim();
+        // strip qwen3 <think>...</think> before finding JSON
+        var thinkEnd = t.LastIndexOf("</think>");
+        if (thinkEnd >= 0) t = t[(thinkEnd + 8)..].Trim();
         if (t.StartsWith("```")) { var s = t.IndexOf('\n') + 1; var e = t.LastIndexOf("```"); if (e > s) t = t[s..e].Trim(); }
         var start = t.IndexOf('{'); var end = t.LastIndexOf('}');
         return (start >= 0 && end > start) ? t[start..(end + 1)] : t;
