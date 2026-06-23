@@ -66,7 +66,8 @@ public class OllamaChatProvider : IChatProvider
         {
             model    = _model,
             messages = new[] { new { role = "user", content = prompt } },
-            stream   = false
+            stream   = false,
+            options  = new { num_predict = 16384 }
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint);
