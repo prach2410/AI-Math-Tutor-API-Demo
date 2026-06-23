@@ -11,9 +11,27 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
         string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "");
     public record SolveRequest(string ProblemText, string Latex, string Topic,
         string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "");
+    public record ExplainRequest(string ProblemText, string Topic, string StepText, string FullSolution = "");
     public record AnswerRequest(string Answer);
     public record HintRequest(int Level);
     public record ConfirmFigureRequest(string StudentNote);
+
+    [HttpPost("explain")]
+    public async Task<IActionResult> Explain([FromBody] ExplainRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.StepText))
+            return BadRequest(new { error = "กรุณาระบุขั้นที่ต้องการอธิบาย" });
+
+        try
+        {
+            var explanation = await service.ExplainAsync(req.ProblemText, req.Topic, req.StepText, req.FullSolution);
+            return Ok(new { explanation });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "ไม่สามารถอธิบายเพิ่มได้ กรุณาลองใหม่", detail = ex.Message });
+        }
+    }
 
     [HttpPost("solve")]
     public async Task<IActionResult> Solve([FromBody] SolveRequest req)

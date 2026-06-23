@@ -550,6 +550,45 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         }
     }
 
+    private const string ExplainPrompt = """
+        คุณคือติวเตอร์คณิตศาสตร์ ม.2 นักเรียนเพิ่งเห็นวิธีทำ แล้วกด "อธิบายเพิ่ม" ที่ขั้นนี้เพราะยังไม่เข้าใจ
+
+        โจทย์: {problemText}
+        หัวข้อ: {topic}
+        วิธีทำทั้งหมด (บริบท): {fullSolution}
+        ขั้นที่นักเรียนอยากให้อธิบายเพิ่ม: {stepText}
+
+        อธิบายขั้น/เทคนิคนี้ให้เด็กที่ "ไม่เคยเห็นเทคนิคนี้มาก่อน" เข้าใจ:
+        - เน้น "ทำไมถึงทำแบบนี้" / "ทำไมเทคนิคนี้ใช้ได้" ไม่ใช่แค่ทำซ้ำ
+        - ยกตัวอย่างเล็กๆ 1 ตัว (เลขอื่นที่ง่ายกว่า) ให้เห็นว่ากฎทำงานยังไง
+        - ภาษาไทยเป็นกันเอง · สั้น 3-5 ประโยค · ไม่ใช้ศัพท์ยาก
+        - สัญลักษณ์ Unicode เท่านั้น (∛ √ ² ³ × ÷ − ∴) ❌ ห้าม LaTeX
+
+        ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON:
+        { "explanation": "..." }
+        """;
+
+    public async Task<string> ExplainAsync(string problemText, string topic, string stepText, string fullSolution)
+    {
+        var prompt = ExplainPrompt
+            .Replace("{problemText}", problemText)
+            .Replace("{topic}", topic)
+            .Replace("{stepText}", stepText)
+            .Replace("{fullSolution}", fullSolution);
+
+        var raw = await chat.CompleteAsync(prompt);
+        try
+        {
+            var json = ExtractJson(raw);
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("explanation").GetString() ?? "";
+        }
+        catch
+        {
+            return "ไม่สามารถอธิบายเพิ่มได้ กรุณาลองใหม่";
+        }
+    }
+
     private static string ExtractJson(string text)
     {
         var t = text.Trim();
