@@ -26,7 +26,7 @@ public record AnswerResult(
 );
 
 public record HintResult(int Level, string Help);
-public record SolveResult(string SessionId, string[] SolutionSteps, string UnderstandingStep);
+public record SolveResult(string SessionId, string[] SolutionSteps, string UnderstandingStep, int[] KeyStepIndices);
 
 public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 {
@@ -154,28 +154,31 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         - โจทย์ปัญหา: ขั้นแรกตั้งตัวแปร/สิ่งที่รู้ก่อน → สร้างสมการ → แก้ทีละบรรทัด
 
         ตัวอย่าง 1 — ∛512:
-        [
+        solutionSteps: [
           "💡 เทคนิคสังเกต\n512 เลขคู่ → หาร 2 ได้เสมอ · เริ่มหาร 2\n(ตรวจง่าย: เลขสุดท้ายเป็นเลขคู่ = หาร 2 ลงตัว)",
           "แยกตัวประกอบ (หารสั้น)\n512 ÷ 2 = 256\n256 ÷ 2 = 128\n128 ÷ 2 = 64\n 64 ÷ 2 = 32\n 32 ÷ 2 = 16\n 16 ÷ 2 = 8\n  8 ÷ 2 = 4\n  4 ÷ 2 = 2\n  2 ÷ 2 = 1\n→ 512 = 2⁹",
           "จับกลุ่มทีละ 3  (รากที่สาม)\n512 = (2×2×2) × (2×2×2) × (2×2×2)\n    = 8 × 8 × 8\n    = 8³",
           "ถอดราก\n∛512 = ∛(8³)\n     = 8    (∛(a³) = a · รากที่สามหักล้างกำลังสาม)"
         ]
+        keyStepIndices: [1]   ← ขั้น 1 "เทคนิคสังเกต" เท่านั้น · ถอดราก/จัดกลุ่ม = กลไกตรงไปตรงมา ไม่ต้องอธิบายเพิ่ม
 
         ตัวอย่าง 2 — ∛1,331 (ต้องหาร 2, 3, 5 ไม่ลงตัว จึงลอง 11):
-        [
+        solutionSteps: [
           "💡 เทคนิคสังเกต\nเลขคี่ → หาร 2 ไม่ลงตัว\nผลบวกหลัก 1+3+3+1=8 → หาร 3 ไม่ลงตัว\nลงท้าย 1 → หาร 5 ไม่ลงตัว\nผลต่างหลักคู่-คี่: (3+1)−(1+3) = 0 → หาร 11 ลงตัว → เริ่มหาร 11",
           "แยกตัวประกอบ (หารสั้น)\n1,331 ÷ 11 = 121\n  121 ÷ 11 = 11\n   11 ÷ 11 = 1\n→ 1,331 = 11 × 11 × 11",
           "จับกลุ่มทีละ 3  (รากที่สาม)\n1,331 = (11×11×11)\n      = 11³",
           "ถอดราก\n∛1,331 = ∛(11³)\n       = 11    (∛(a³) = a · รากที่สามหักล้างกำลังสาม)"
         ]
+        keyStepIndices: [1]   ← ขั้น 1 "เทคนิคสังเกต" (กฎหาร 11) · ขั้น 2-4 คำนวณตรงไปตรงมา
 
         ตัวอย่าง 3 — สมการ 2 ตัวแปร: x + y = 20, x − y = 2:
-        [
+        solutionSteps: [
           "ตั้งสมการ\n① x + y = 20\n② x − y = 2",
           "① + ② กำจัด y\n2x = 22\n x = 11",
           "แทน x = 11 ใน ①\n11 + y = 20\n      y = 9",
           "∴ x = 11, y = 9"
         ]
+        keyStepIndices: [2]   ← ขั้น 2 "กำจัด y" คือกลวิธีสำคัญ · ขั้น 1/3/4 คำนวณตรงไปตรงมา
 
         2. "understandingStep" — คำถาม/งานสั้น 1 อย่างให้แน่ใจว่าเข้าใจจริง (เลือก 1):
            - โจทย์คล้ายกันแต่เลขต่าง ให้ลองทำ
@@ -183,8 +186,14 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
            - คำถามตรวจสอบความเข้าใจ 1 ข้อ
            โทนเป็นกันเอง ภาษาไทย
 
+        3. "keyStepIndices" — เลขขั้น (เริ่มที่ 1) ที่มีเทคนิค/กฎ/เหตุผลที่เด็กอาจไม่เคยรู้ (array of int):
+           · "💡 เทคนิคสังเกต" = key เสมอ
+           · ขั้นที่มีกลวิธี เช่น การกำจัดตัวแปร, ทำไมจับกลุ่มทีละ 3, การประมาณราก = key
+           · ❌ ไม่ใช่ key: ขั้นคำนวณ/แทนค่า/ถอดรากตรงไปตรงมา (∛(11³)=11), การหารซ้ำที่เห็นชัดแล้ว
+           · เลือกเฉพาะ 1-2 ขั้นที่ทรงคุณค่าที่สุด ไม่ต้องครบทุกขั้น
+
         ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON:
-        { "solutionSteps": ["...", "...", "..."], "understandingStep": "..." }
+        { "solutionSteps": ["...", "...", "..."], "understandingStep": "...", "keyStepIndices": [1] }
         """;
 
     private const string HintPrompt = """
@@ -485,16 +494,18 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 
         List<string> steps = [];
         string understanding = "";
+        int[] keyStepIndices = [];
         const int maxAttempts = 3;
 
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             var raw = await chat.CompleteAsync(prompt);
-            var (ok, parsedSteps, parsedUnderstanding) = ParseSolveResponse(raw);
+            var (ok, parsedSteps, parsedUnderstanding, parsedKeys) = ParseSolveResponse(raw);
             if (ok)
             {
                 steps = parsedSteps;
                 understanding = parsedUnderstanding;
+                keyStepIndices = parsedKeys;
                 break;
             }
             if (attempt == maxAttempts - 1)
@@ -519,10 +530,10 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         db.TeachingSessions.Add(session);
         await db.SaveChangesAsync();
 
-        return new SolveResult(session.Id, [.. steps], understanding);
+        return new SolveResult(session.Id, [.. steps], understanding, keyStepIndices);
     }
 
-    private static (bool Ok, List<string> Steps, string Understanding) ParseSolveResponse(string raw)
+    private static (bool Ok, List<string> Steps, string Understanding, int[] KeyStepIndices) ParseSolveResponse(string raw)
     {
         try
         {
@@ -540,13 +551,17 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
                 ? u.GetString() ?? ""
                 : "";
 
+            var keyStepIndices = root.TryGetProperty("keyStepIndices", out var k)
+                ? k.EnumerateArray().Select(e => e.GetInt32()).ToArray()
+                : [];
+
             return steps.Count > 0
-                ? (true, steps, understanding)
-                : (false, [], "");
+                ? (true, steps, understanding, keyStepIndices)
+                : (false, [], "", []);
         }
         catch
         {
-            return (false, [], "");
+            return (false, [], "", []);
         }
     }
 

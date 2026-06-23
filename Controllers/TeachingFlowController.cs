@@ -45,9 +45,10 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
                 req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt);
             return Ok(new
             {
-                sessionId       = result.SessionId,
-                solutionSteps   = result.SolutionSteps,
+                sessionId         = result.SessionId,
+                solutionSteps     = result.SolutionSteps,
                 understandingStep = result.UnderstandingStep,
+                keyStepIndices    = result.KeyStepIndices,
             });
         }
         catch (Exception ex)
