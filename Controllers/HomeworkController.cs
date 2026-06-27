@@ -55,6 +55,9 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
                 latex       = p.Latex,
                 topic       = p.Topic,
                 hasFigure   = p.HasFigure,
+                groupIndex  = p.GroupIndex,
+                groupTitle  = p.GroupTitle,
+                subText     = p.SubText,
             }),
         });
     }
@@ -88,6 +91,9 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
                     latex       = p.Latex,
                     topic       = p.Topic,
                     hasFigure   = p.HasFigure,
+                    groupIndex  = p.GroupIndex,
+                    groupTitle  = p.GroupTitle,
+                    subText     = p.SubText,
                 }),
             });
         }
