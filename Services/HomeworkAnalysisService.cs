@@ -126,10 +126,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
           "problems": [
             {
               "index": 1,
-              "groupIndex": 1,
-              "groupTitle": "หารากที่สามของจำนวนต่อไปนี้ (อุ่นเครื่อง)",
-              "problemText": "หารากที่สามของจำนวนต่อไปนี้: -512",
-              "subText": "-512",
+              "problemText": "ข้อความโจทย์ครบถ้วน รวมคำสั่ง เช่น หารากที่สามของจำนวนต่อไปนี้: -512",
               "latex": "สมการ LaTeX (ถ้าไม่มีใส่ string ว่าง)",
               "topic": "หัวข้อคณิตศาสตร์ เช่น รากที่สาม",
               "hasFigure": false
@@ -137,12 +134,7 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
           ]
         }
 
-        กฎ groupIndex / groupTitle / subText:
-        - groupIndex: หมายเลขข้อใหญ่ (1, 2, 3, …) — ข้อย่อยในกลุ่มเดียวกันใช้ groupIndex เดียวกัน
-        - groupTitle: คำสั่ง/ชื่อของข้อใหญ่นั้น เช่น "หารากที่สามของจำนวนต่อไปนี้ (อุ่นเครื่อง)"
-        - subText: เฉพาะ expression/ตัวเลขของข้อย่อยนั้น ไม่รวมคำสั่ง เช่น "-512", "5/8", "รากที่สามของ -8"
-        - index: ต่อเนื่องทั้งหมด 1 ถึง N ข้ามกลุ่ม — ไม่ reset ต่อกลุ่ม
-        - ถ้าไม่มีข้อย่อย (โจทย์เดี่ยว): groupIndex = 1, groupTitle = "", subText = problemText
+        - index: ต่อเนื่องทั้งหมด 1 ถึง N ข้ามทุกกลุ่ม — ไม่ reset ต่อข้อใหญ่
 
         กฎสำคัญ — ตัวอย่างและคำชี้แจง:
         - ถ้าใบงานมีส่วน "ตัวอย่าง" / "ตัวอย่างที่" / "Example" ให้รวมเป็นข้อแรกๆ ของ list ด้วย
@@ -266,12 +258,33 @@ internal static class HomeworkResponseParser
             if (problems.Count == 0)
                 return (new HomeworkAnalysisResult([], false, "อ่านโจทย์ไม่ออก กรุณาลองใหม่"), "parse_no_problems");
 
-            return (new HomeworkAnalysisResult(problems, true, message), "ok");
+            return (new HomeworkAnalysisResult(InferGroups(problems), true, message), "ok");
         }
         catch
         {
             return (new HomeworkAnalysisResult([], false, "อ่านโจทย์ไม่ออก กรุณาลองใหม่"), "parse_error");
         }
+    }
+
+    // ตรวจ pattern "คำสั่ง: expression" → แยก groupTitle + subText โดยไม่พึ่ง LLM
+    private static List<ProblemItem> InferGroups(List<ProblemItem> problems)
+    {
+        var result     = new List<ProblemItem>(problems.Count);
+        var groupIndex = 0;
+        var lastPrefix = "\0";
+
+        foreach (var p in problems)
+        {
+            var colonIdx = p.ProblemText.LastIndexOf(": ", StringComparison.Ordinal);
+            var prefix   = colonIdx > 0 ? p.ProblemText[..colonIdx].Trim() : "";
+            var subText  = colonIdx > 0 ? p.ProblemText[(colonIdx + 2)..].Trim() : p.ProblemText;
+
+            if (prefix != lastPrefix) { groupIndex++; lastPrefix = prefix; }
+
+            result.Add(p with { GroupIndex = groupIndex, GroupTitle = prefix, SubText = subText });
+        }
+
+        return result;
     }
 
     internal static string ExtractJson(string text)
