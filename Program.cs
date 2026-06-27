@@ -17,7 +17,15 @@ var textProvider = builder.Configuration.GetValue<string>("LLM__TextProvider")
     ?? Environment.GetEnvironmentVariable("LLM__TextProvider")
     ?? "Claude";
 
-if (textProvider == "LocalAI")
+if (textProvider == "OpenRouter")
+{
+    var orKey   = builder.Configuration.GetValue<string>("LLM__OpenRouter__ApiKey")
+        ?? Environment.GetEnvironmentVariable("LLM__OpenRouter__ApiKey") ?? "";
+    var orModel = builder.Configuration.GetValue<string>("LLM__OpenRouter__Model")
+        ?? Environment.GetEnvironmentVariable("LLM__OpenRouter__Model") ?? "google/gemini-2.5-flash";
+    builder.Services.AddSingleton<IChatProvider>(_ => new OpenRouterChatProvider(orKey, orModel));
+}
+else if (textProvider == "LocalAI")
 {
     var localAiKey = builder.Configuration.GetValue<string>("LLM__LocalAI__ApiKey")
         ?? Environment.GetEnvironmentVariable("LLM__LocalAI__ApiKey")

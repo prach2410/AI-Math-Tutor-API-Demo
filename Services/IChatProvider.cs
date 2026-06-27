@@ -85,6 +85,43 @@ public class OllamaChatProvider : IChatProvider
     }
 }
 
+public class OpenRouterChatProvider : IChatProvider
+{
+    private static readonly HttpClient Http = new();
+    private readonly string _apiKey;
+    private readonly string _model;
+
+    public OpenRouterChatProvider(string apiKey, string model = "google/gemini-2.5-flash")
+    {
+        _apiKey = apiKey;
+        _model  = model;
+    }
+
+    public async Task<string> CompleteAsync(string prompt)
+    {
+        var body = new
+        {
+            model      = _model,
+            max_tokens = 16384,
+            messages   = new[] { new { role = "user", content = prompt } }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "https://openrouter.ai/api/v1/chat/completions");
+        request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        using var response = await Http.SendAsync(request);
+        var raw = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"OpenRouter API error {(int)response.StatusCode}: {raw}");
+
+        using var doc = JsonDocument.Parse(raw);
+        return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+    }
+}
+
 public class MockChatProvider : IChatProvider
 {
     public Task<string> CompleteAsync(string prompt)
