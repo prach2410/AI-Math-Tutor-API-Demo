@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace backend.Services;
 
-public record ProblemItem(int Index, string ProblemText, string Latex, string Topic, bool HasFigure);
+public record ProblemItem(int Index, string ProblemText, string Latex, string Topic, bool HasFigure,
+    int GroupIndex = 0, string GroupTitle = "", string SubText = "");
 
 public record HomeworkAnalysisResult(
     List<ProblemItem> Problems,
@@ -125,13 +126,23 @@ internal class ClaudeHomeworkAnalyzer : IHomeworkAnalyzer
           "problems": [
             {
               "index": 1,
-              "problemText": "ข้อความโจทย์ข้อที่ 1 ครบถ้วน",
+              "groupIndex": 1,
+              "groupTitle": "หารากที่สามของจำนวนต่อไปนี้ (อุ่นเครื่อง)",
+              "problemText": "หารากที่สามของจำนวนต่อไปนี้: -512",
+              "subText": "-512",
               "latex": "สมการ LaTeX (ถ้าไม่มีใส่ string ว่าง)",
-              "topic": "หัวข้อคณิตศาสตร์ เช่น สมการเชิงเส้นตัวแปรเดียว",
+              "topic": "หัวข้อคณิตศาสตร์ เช่น รากที่สาม",
               "hasFigure": false
             }
           ]
         }
+
+        กฎ groupIndex / groupTitle / subText:
+        - groupIndex: หมายเลขข้อใหญ่ (1, 2, 3, …) — ข้อย่อยในกลุ่มเดียวกันใช้ groupIndex เดียวกัน
+        - groupTitle: คำสั่ง/ชื่อของข้อใหญ่นั้น เช่น "หารากที่สามของจำนวนต่อไปนี้ (อุ่นเครื่อง)"
+        - subText: เฉพาะ expression/ตัวเลขของข้อย่อยนั้น ไม่รวมคำสั่ง เช่น "-512", "5/8", "รากที่สามของ -8"
+        - index: ต่อเนื่องทั้งหมด 1 ถึง N ข้ามกลุ่ม — ไม่ reset ต่อกลุ่ม
+        - ถ้าไม่มีข้อย่อย (โจทย์เดี่ยว): groupIndex = 1, groupTitle = "", subText = problemText
 
         กฎสำคัญ — ตัวอย่างและคำชี้แจง:
         - ถ้าใบงานมีส่วน "ตัวอย่าง" / "ตัวอย่างที่" / "Example" ให้รวมเป็นข้อแรกๆ ของ list ด้วย
@@ -244,7 +255,10 @@ internal static class HomeworkResponseParser
                         ProblemText: p.GetProperty("problemText").GetString() ?? "",
                         Latex:       p.TryGetProperty("latex", out var lat) ? lat.GetString() ?? "" : "",
                         Topic:       p.TryGetProperty("topic", out var top) ? top.GetString() ?? "" : "",
-                        HasFigure:   p.TryGetProperty("hasFigure", out var hf) && hf.GetBoolean()
+                        HasFigure:   p.TryGetProperty("hasFigure", out var hf) && hf.GetBoolean(),
+                        GroupIndex:  p.TryGetProperty("groupIndex", out var gi) ? gi.GetInt32() : 0,
+                        GroupTitle:  p.TryGetProperty("groupTitle", out var gt) ? gt.GetString() ?? "" : "",
+                        SubText:     p.TryGetProperty("subText", out var st) ? st.GetString() ?? "" : ""
                     ));
                 }
             }
