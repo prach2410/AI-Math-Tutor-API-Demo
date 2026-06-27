@@ -34,6 +34,13 @@ public class HomeworkAnalysisService(AppDbContext db)
     {
         var visionProvider = Environment.GetEnvironmentVariable("LLM__VisionProvider") ?? "Claude";
 
+        if (visionProvider == "OpenRouter")
+        {
+            var key   = Environment.GetEnvironmentVariable("LLM__OpenRouter__ApiKey") ?? "";
+            var model = Environment.GetEnvironmentVariable("LLM__OpenRouter__VisionModel") ?? "google/gemini-2.5-flash-lite";
+            return new OpenRouterHomeworkAnalyzer(key, model);
+        }
+
         if (visionProvider == "OpenAI")
         {
             var key   = Environment.GetEnvironmentVariable("LLM__OpenAI__ApiKey") ?? "";
@@ -542,6 +549,69 @@ internal class OpenAiHomeworkAnalyzer(string apiKey, string model = "gpt-4o-mini
             {
                 var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
                 return (errResult, $"openai_error_{(int)response.StatusCode}", raw);
+            }
+
+            using var doc = JsonDocument.Parse(raw);
+            var text = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString() ?? "";
+
+            var (result, reason) = HomeworkResponseParser.ParseResult(text);
+            return (result, reason, text);
+        }
+        catch (Exception ex)
+        {
+            var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+            return (errResult, "exception: " + ex.Message, raw);
+        }
+    }
+}
+
+internal class OpenRouterHomeworkAnalyzer(string apiKey, string model = "google/gemini-2.5-flash-lite") : IHomeworkAnalyzer
+{
+    private static readonly HttpClient Http = new();
+    public string ModelName => model;
+
+    public async Task<(HomeworkAnalysisResult Result, string Reason, string RawResponse)> AnalyzeAsync(
+        IReadOnlyList<(byte[] Bytes, string MediaType)> images,
+        string fileName = "")
+    {
+        var contentBlocks = new List<object>();
+        foreach (var img in images)
+        {
+            var base64 = Convert.ToBase64String(img.Bytes);
+            contentBlocks.Add(new
+            {
+                type      = "image_url",
+                image_url = new { url = $"data:{img.MediaType};base64,{base64}" }
+            });
+        }
+        contentBlocks.Add(new { type = "text", text = ClaudeHomeworkAnalyzer.Prompt });
+
+        var body = new
+        {
+            model,
+            max_tokens = 16384,
+            messages   = new[] { new { role = "user", content = contentBlocks } }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "https://openrouter.ai/api/v1/chat/completions");
+        request.Headers.Add("Authorization", $"Bearer {apiKey}");
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        var raw = "";
+        try
+        {
+            using var response = await Http.SendAsync(request);
+            raw = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errResult = new HomeworkAnalysisResult([], false, "ระบบอ่านโจทย์ขัดข้องชั่วคราว กรุณาลองใหม่");
+                return (errResult, $"openrouter_error_{(int)response.StatusCode}", raw);
             }
 
             using var doc = JsonDocument.Parse(raw);
