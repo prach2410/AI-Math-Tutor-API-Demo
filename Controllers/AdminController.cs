@@ -68,6 +68,7 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             visionModel       = r.VisionModel,
             analysisStartedAt = r.AnalysisStartedAt,
             analysisEndedAt   = r.AnalysisEndedAt,
+            studentName       = r.StudentName,
             taught            = !string.IsNullOrEmpty(r.AnalysisStartedAt)
                              && !string.IsNullOrEmpty(r.AnalysisEndedAt)
                              && taughtKeys.Contains((r.AnalysisStartedAt, r.AnalysisEndedAt)),
@@ -93,6 +94,7 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
             visionModel       = s.VisionModel,
             analysisStartedAt = s.AnalysisStartedAt,
             analysisEndedAt   = s.AnalysisEndedAt,
+            studentName       = s.StudentName,
         });
 
         return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkReads = hrList, homeworkSessions = hwList });

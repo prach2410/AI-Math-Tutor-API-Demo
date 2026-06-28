@@ -216,7 +216,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 
     public async Task<StartTeachingResult> StartAsync(
         string problemText, string latex, string topic, bool hasFigure,
-        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "")
+        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "", string studentName = "")
     {
         var session = new TeachingSessionEntity
         {
@@ -232,6 +232,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             VisionModel       = visionModel,
             AnalysisStartedAt = analysisStartedAt,
             AnalysisEndedAt   = analysisEndedAt,
+            StudentName       = studentName,
         };
 
         if (hasFigure)
@@ -485,7 +486,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
     }
 
     public async Task<SolveResult> SolveAsync(string problemText, string latex, string topic,
-        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "")
+        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "", string studentName = "")
     {
         var prompt = SolvePrompt
             .Replace("{problemText}", problemText)
@@ -526,6 +527,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             VisionModel       = visionModel,
             AnalysisStartedAt = analysisStartedAt,
             AnalysisEndedAt   = analysisEndedAt,
+            StudentName       = studentName,
         };
         db.TeachingSessions.Add(session);
         await db.SaveChangesAsync();

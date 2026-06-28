@@ -113,6 +113,11 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN VisionModel           TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN AnalysisStartedAt     TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN AnalysisEndedAt       TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN StudentName           TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN StudentName        TEXT NOT NULL DEFAULT ''"); } catch { }
+    // Backfill existing records: StudentName="" → "คนเก่ง"
+    try { db.Database.ExecuteSqlRaw("UPDATE HomeworkReads SET StudentName = 'คนเก่ง' WHERE StudentName = ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("UPDATE TeachingSessions SET StudentName = 'คนเก่ง' WHERE StudentName = ''"); } catch { }
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS LearningRecords (

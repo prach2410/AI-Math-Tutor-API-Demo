@@ -20,4 +20,5 @@ public class TeachingSessionEntity
     public string VisionModel { get; set; } = "";
     public string AnalysisStartedAt { get; set; } = "";
     public string AnalysisEndedAt { get; set; } = "";
+    public string StudentName { get; set; } = "";
 }

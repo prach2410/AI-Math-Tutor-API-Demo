@@ -13,7 +13,7 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
         ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 
     [HttpPost("analyze")]
-    public async Task<IActionResult> Analyze(List<IFormFile> images)
+    public async Task<IActionResult> Analyze(List<IFormFile> images, [FromForm] string studentName = "")
     {
         if (images is null || images.Count == 0)
             return BadRequest(new { error = "กรุณาแนบรูปภาพอย่างน้อย 1 รูป" });
@@ -39,7 +39,7 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
             ? images[0].FileName
             : $"{images[0].FileName} +{images.Count - 1} รูป";
 
-        var result = await service.AnalyzeAsync(imageData, fileName);
+        var result = await service.AnalyzeAsync(imageData, fileName, studentName);
 
         return Ok(new
         {
@@ -63,9 +63,9 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
     }
 
     [HttpGet("reads")]
-    public async Task<IActionResult> GetReads([FromQuery] int limit = 30)
+    public async Task<IActionResult> GetReads([FromQuery] int limit = 30, [FromQuery] string name = "")
     {
-        var entries = await service.GetRecentAsync(limit);
+        var entries = await service.GetRecentAsync(limit, name);
         var result = new List<object>();
         foreach (var e in entries)
         {

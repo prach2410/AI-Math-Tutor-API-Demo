@@ -72,7 +72,8 @@ public class HomeworkAnalysisService(AppDbContext db)
 
     public async Task<HomeworkAnalysisResult> AnalyzeAsync(
         IReadOnlyList<(byte[] Bytes, string MediaType)> images,
-        string fileName = "")
+        string fileName = "",
+        string studentName = "")
     {
         var startedAt = DateTime.UtcNow.ToString("O");
         var (result, reason, rawResponse) = await Analyzer.AnalyzeAsync(images, fileName);
@@ -92,14 +93,20 @@ public class HomeworkAnalysisService(AppDbContext db)
             VisionModel       = Analyzer.ModelName,
             AnalysisStartedAt = startedAt,
             AnalysisEndedAt   = endedAt,
+            StudentName       = studentName,
         });
         await db.SaveChangesAsync();
 
         return result with { VisionModel = Analyzer.ModelName, StartedAt = startedAt, EndedAt = endedAt };
     }
 
-    public Task<List<HomeworkReadEntity>> GetRecentAsync(int limit = 50)
-        => db.HomeworkReads.OrderByDescending(e => e.Id).Take(limit).ToListAsync();
+    public Task<List<HomeworkReadEntity>> GetRecentAsync(int limit = 50, string name = "")
+    {
+        var q = db.HomeworkReads.AsQueryable();
+        if (!string.IsNullOrEmpty(name))
+            q = q.Where(e => e.StudentName == name);
+        return q.OrderByDescending(e => e.Id).Take(limit).ToListAsync();
+    }
 
     public Task<List<HomeworkReadEntity>> GetAllAsync()
         => db.HomeworkReads.OrderBy(e => e.Id).ToListAsync();

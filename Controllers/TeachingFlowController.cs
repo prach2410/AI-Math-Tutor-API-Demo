@@ -8,9 +8,9 @@ namespace backend.Controllers;
 public class TeachingFlowController(TeachingFlowService service) : ControllerBase
 {
     public record StartRequest(string ProblemText, string Latex, string Topic, bool HasFigure,
-        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "");
+        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "", string StudentName = "");
     public record SolveRequest(string ProblemText, string Latex, string Topic,
-        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "");
+        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "", string StudentName = "");
     public record ExplainRequest(string ProblemText, string Topic, string StepText, string FullSolution = "");
     public record AnswerRequest(string Answer);
     public record HintRequest(int Level);
@@ -42,7 +42,7 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
         try
         {
             var result = await service.SolveAsync(req.ProblemText, req.Latex, req.Topic,
-                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt);
+                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt, req.StudentName);
             return Ok(new
             {
                 sessionId         = result.SessionId,
@@ -66,7 +66,7 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
         try
         {
             var result = await service.StartAsync(req.ProblemText, req.Latex, req.Topic, req.HasFigure,
-                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt);
+                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt, req.StudentName);
 
             if (result.NeedsConfirm)
             {
