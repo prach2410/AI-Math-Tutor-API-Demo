@@ -62,6 +62,15 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
         });
     }
 
+    [HttpPost("typed")]
+    public async Task<IActionResult> SaveTyped([FromBody] TypedProblemRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.ProblemText))
+            return BadRequest(new { error = "problemText ว่าง" });
+        await service.SaveTypedAsync(req.ProblemText.Trim(), req.StudentName ?? "");
+        return Ok(new { saved = true });
+    }
+
     [HttpGet("reads")]
     public async Task<IActionResult> GetReads([FromQuery] int limit = 30, [FromQuery] string name = "")
     {
@@ -189,3 +198,5 @@ public class HomeworkController(HomeworkAnalysisService service) : ControllerBas
         return value;
     }
 }
+
+public record TypedProblemRequest(string ProblemText, string StudentName = "");

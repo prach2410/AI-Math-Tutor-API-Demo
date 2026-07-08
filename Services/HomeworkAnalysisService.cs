@@ -100,6 +100,26 @@ public class HomeworkAnalysisService(AppDbContext db)
         return result with { VisionModel = Analyzer.ModelName, StartedAt = startedAt, EndedAt = endedAt };
     }
 
+    // โจทย์ที่เด็กพิมพ์เอง (ข้าม OCR) — บันทึกให้โผล่ใน "การบ้านที่อัปไว้" + resume ได้ เหมือน path ถ่ายรูป
+    public async Task SaveTypedAsync(string problemText, string studentName = "")
+    {
+        var problems = new List<ProblemItem> { new(1, problemText, "", "", false) };
+        var now = DateTime.UtcNow.ToString("O");
+        db.HomeworkReads.Add(new HomeworkReadEntity
+        {
+            Filename    = "พิมพ์เอง",
+            CreatedAt   = now,
+            Readable    = true,
+            Reason      = "typed",
+            ProblemText = JsonSerializer.Serialize(problems),
+            Latex       = "",
+            Topic       = "",
+            RawResponse = "",
+            StudentName = studentName,
+        });
+        await db.SaveChangesAsync();
+    }
+
     public Task<List<HomeworkReadEntity>> GetRecentAsync(int limit = 50, string name = "")
     {
         var q = db.HomeworkReads.AsQueryable();
