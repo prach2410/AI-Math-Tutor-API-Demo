@@ -14,7 +14,7 @@ public class LearningJournalController(
         ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 
     [HttpPost("analyze")]
-    public async Task<IActionResult> Analyze(List<IFormFile> images)
+    public async Task<IActionResult> Analyze(List<IFormFile> images, [FromForm] string studentName = "")
     {
         if (images is null || images.Count == 0)
             return BadRequest(new { error = "กรุณาแนบรูปภาพอย่างน้อย 1 รูป" });
@@ -43,8 +43,8 @@ public class LearningJournalController(
             SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Concat(sortedHashes)))
         ).ToLowerInvariant();
 
-        // Check duplicate BEFORE calling vision API (saves cost)
-        var existing = await records.ExistsByHashAsync(imageHash);
+        // Check duplicate BEFORE calling vision API (saves cost) — scoped per student
+        var existing = await records.ExistsByHashAsync(imageHash, studentName);
         if (existing.HasValue)
         {
             return Ok(new
@@ -66,7 +66,7 @@ public class LearningJournalController(
         var savedId = "";
         if (result.Readable)
         {
-            try { savedId = await records.SaveAsync(result, imageHash); }
+            try { savedId = await records.SaveAsync(result, imageHash, studentName); }
             catch { /* don't break analysis on save failure */ }
         }
 

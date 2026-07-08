@@ -15,7 +15,8 @@ public record LearningRecordEntry(
     string Reflection = "",
     string VisionModel = "",
     string AnalysisStartedAt = "",
-    string AnalysisEndedAt = ""
+    string AnalysisEndedAt = "",
+    string StudentName = ""
 );
 
 public record DailyLogGroup(
@@ -30,20 +31,26 @@ public class LearningRecordsService(IConfiguration config)
         ?? Environment.GetEnvironmentVariable("DatabasePath")
         ?? "learning_sessions.db";
 
-    public async Task<(string Id, string Date)?> ExistsByHashAsync(string hash)
+    // ชื่อว่างให้ตกเป็น "คนเก่ง" ให้ตรงกับ backfill legacy — กัน record ไม่มีเจ้าของ
+    private static string Norm(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "คนเก่ง" : name.Trim();
+
+    // dedup ต่อคน: เด็กคนละคนถ่ายกระดานเดียวกันต้องได้บันทึกของตัวเอง
+    public async Task<(string Id, string Date)?> ExistsByHashAsync(string hash, string studentName = "")
     {
         if (string.IsNullOrWhiteSpace(hash)) return null;
         using var conn = new SqliteConnection($"Data Source={_dbPath}");
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Date FROM LearningRecords WHERE ImageHash = $hash LIMIT 1";
+        cmd.CommandText = "SELECT Id, Date FROM LearningRecords WHERE ImageHash = $hash AND StudentName = $name LIMIT 1";
         cmd.Parameters.AddWithValue("$hash", hash);
+        cmd.Parameters.AddWithValue("$name", Norm(studentName));
         using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
         return (reader.GetString(0), reader.GetString(1));
     }
 
-    public async Task<string> SaveAsync(LearningJournalAnalysis analysis, string imageHash = "")
+    public async Task<string> SaveAsync(LearningJournalAnalysis analysis, string imageHash = "", string studentName = "")
     {
         var id        = Guid.NewGuid().ToString();
         var date      = DateTime.UtcNow.ToString("yyyy-MM-dd");
@@ -57,9 +64,9 @@ public class LearningRecordsService(IConfiguration config)
         cmd.CommandText = """
             INSERT INTO LearningRecords
                 (Id, Date, DocumentType, Topic, Summary, HighlightsJson, KeywordsJson, CreatedAt, ImageHash,
-                 VisionModel, AnalysisStartedAt, AnalysisEndedAt)
+                 VisionModel, AnalysisStartedAt, AnalysisEndedAt, StudentName)
             VALUES ($id, $date, $docType, $topic, $summary, $hl, $kw, $createdAt, $hash,
-                    $visionModel, $startedAt, $endedAt)
+                    $visionModel, $startedAt, $endedAt, $name)
             """;
         cmd.Parameters.AddWithValue("$id",          id);
         cmd.Parameters.AddWithValue("$date",        date);
@@ -73,6 +80,7 @@ public class LearningRecordsService(IConfiguration config)
         cmd.Parameters.AddWithValue("$visionModel", analysis.VisionModel);
         cmd.Parameters.AddWithValue("$startedAt",   analysis.StartedAt);
         cmd.Parameters.AddWithValue("$endedAt",     analysis.EndedAt);
+        cmd.Parameters.AddWithValue("$name",        Norm(studentName));
         await cmd.ExecuteNonQueryAsync();
         return id;
     }
@@ -88,7 +96,7 @@ public class LearningRecordsService(IConfiguration config)
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task<List<DailyLogGroup>> GetTimelineAsync()
+    public async Task<List<DailyLogGroup>> GetTimelineAsync(string studentName = "")
     {
         using var conn = new SqliteConnection($"Data Source={_dbPath}");
         await conn.OpenAsync();
@@ -96,8 +104,10 @@ public class LearningRecordsService(IConfiguration config)
         cmd.CommandText = """
             SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt
             FROM   LearningRecords
+            WHERE  StudentName = $name
             ORDER  BY CreatedAt DESC
             """;
+        cmd.Parameters.AddWithValue("$name", Norm(studentName));
 
         var entries = new List<LearningRecordEntry>();
         using var reader = await cmd.ExecuteReaderAsync();
@@ -132,7 +142,7 @@ public class LearningRecordsService(IConfiguration config)
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT Id, Date, DocumentType, Topic, Summary, KeywordsJson, CreatedAt, DownloadedAt, Reflection,
-                   VisionModel, AnalysisStartedAt, AnalysisEndedAt
+                   VisionModel, AnalysisStartedAt, AnalysisEndedAt, StudentName
             FROM   LearningRecords
             WHERE  Date >= $start AND Date <= $end
             ORDER  BY Date ASC, CreatedAt ASC
@@ -160,7 +170,8 @@ public class LearningRecordsService(IConfiguration config)
                 Reflection:       reader.IsDBNull(8)  ? "" : reader.GetString(8),
                 VisionModel:      reader.IsDBNull(9)  ? "" : reader.GetString(9),
                 AnalysisStartedAt:reader.IsDBNull(10) ? "" : reader.GetString(10),
-                AnalysisEndedAt:  reader.IsDBNull(11) ? "" : reader.GetString(11)
+                AnalysisEndedAt:  reader.IsDBNull(11) ? "" : reader.GetString(11),
+                StudentName:      reader.IsDBNull(12) ? "" : reader.GetString(12)
             ));
         }
         return entries;

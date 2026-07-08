@@ -9,9 +9,9 @@ namespace backend.Controllers;
 public class LearningRecordsController(LearningRecordsService service) : ControllerBase
 {
     [HttpGet("timeline")]
-    public async Task<IActionResult> GetTimeline()
+    public async Task<IActionResult> GetTimeline([FromQuery] string name = "")
     {
-        var groups = await service.GetTimelineAsync();
+        var groups = await service.GetTimelineAsync(name);
         return Ok(groups.Select(g => new
         {
             date    = g.Date,
