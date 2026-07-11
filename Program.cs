@@ -121,6 +121,10 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("UPDATE TeachingSessions SET StudentName = 'คนเก่ง' WHERE StudentName = ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("UPDATE LearningRecords SET StudentName = 'คนเก่ง' WHERE StudentName = ''"); } catch { }
 
+    // one-shot data fix (Task 30 Part A) — ลบออก commit ถัดไปหลัง verify
+    db.Database.ExecuteSqlRaw(
+        "UPDATE HomeworkReads SET StudentName = 'คนเก่ง' WHERE Id = 37 AND length(StudentName) = 1;");
+
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS LearningRecords (
             Id             TEXT NOT NULL PRIMARY KEY,
