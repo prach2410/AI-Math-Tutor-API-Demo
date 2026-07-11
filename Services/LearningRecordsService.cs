@@ -31,9 +31,7 @@ public class LearningRecordsService(IConfiguration config)
         ?? Environment.GetEnvironmentVariable("DatabasePath")
         ?? "learning_sessions.db";
 
-    // ชื่อว่างให้ตกเป็น "คนเก่ง" ให้ตรงกับ backfill legacy — กัน record ไม่มีเจ้าของ
-    private static string Norm(string name) =>
-        string.IsNullOrWhiteSpace(name) ? "คนเก่ง" : name.Trim();
+    private static string Norm(string name) => StudentNameNormalizer.Normalize(name);
 
     // dedup ต่อคน: เด็กคนละคนถ่ายกระดานเดียวกันต้องได้บันทึกของตัวเอง
     public async Task<(string Id, string Date)?> ExistsByHashAsync(string hash, string studentName = "")

@@ -93,7 +93,7 @@ public class HomeworkAnalysisService(AppDbContext db)
             VisionModel       = Analyzer.ModelName,
             AnalysisStartedAt = startedAt,
             AnalysisEndedAt   = endedAt,
-            StudentName       = studentName,
+            StudentName       = StudentNameNormalizer.Normalize(studentName),
         });
         await db.SaveChangesAsync();
 
@@ -115,7 +115,7 @@ public class HomeworkAnalysisService(AppDbContext db)
             Latex       = "",
             Topic       = "",
             RawResponse = "",
-            StudentName = studentName,
+            StudentName = StudentNameNormalizer.Normalize(studentName),
         });
         await db.SaveChangesAsync();
     }

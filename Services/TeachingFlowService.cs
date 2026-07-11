@@ -232,7 +232,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             VisionModel       = visionModel,
             AnalysisStartedAt = analysisStartedAt,
             AnalysisEndedAt   = analysisEndedAt,
-            StudentName       = studentName,
+            StudentName       = StudentNameNormalizer.Normalize(studentName),
         };
 
         if (hasFigure)
@@ -527,7 +527,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             VisionModel       = visionModel,
             AnalysisStartedAt = analysisStartedAt,
             AnalysisEndedAt   = analysisEndedAt,
-            StudentName       = studentName,
+            StudentName       = StudentNameNormalizer.Normalize(studentName),
         };
         db.TeachingSessions.Add(session);
         await db.SaveChangesAsync();
