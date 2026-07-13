@@ -542,7 +542,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             Topic             = topic,
             Mode              = "solve_first",
             SolveFirstCount   = 1,
-            StepsJson         = "[]",
+            StepsJson         = JsonSerializer.Serialize(steps),   // เก็บ solutionSteps (List<string>) จริง — เดิมทิ้งเป็น "[]" (Task 32 Option C: persist เพื่อวัด repeat-divergence + วัตถุดิบ cache อนาคต)
             Status            = "done",
             CreatedAt         = DateTime.UtcNow.ToString("O"),
             VisionModel       = visionModel,
