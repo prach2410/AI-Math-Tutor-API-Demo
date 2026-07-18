@@ -101,6 +101,30 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
         return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkReads = hrList, homeworkSessions = hwList });
     }
 
+    // observability: recall events (session continuity) — counts + recent · ดู R7 shown:miss
+    [HttpGet("recall-events")]
+    public async Task<IActionResult> GetRecallEvents([FromQuery] int limit = 50)
+    {
+        var counts = await db.RecallEvents
+            .GroupBy(e => e.Kind)
+            .Select(g => new { Kind = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        int C(string k) => counts.FirstOrDefault(x => x.Kind == k)?.Count ?? 0;
+
+        var recent = await db.RecallEvents
+            .OrderByDescending(e => e.Id)
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select(e => new { e.Id, e.At, e.Kind, e.Topic, e.TodayTopic })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            counts = new { shown = C("shown"), miss = C("miss"), answered = C("answered") },
+            recent,
+        });
+    }
+
     [HttpDelete("learning-record/{id}")]
     public async Task<IActionResult> DeleteLearningRecord(string id)
     {

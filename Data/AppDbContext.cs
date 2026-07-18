@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ProjectBrainEvidenceEntity> ProjectBrainEvidence => Set<ProjectBrainEvidenceEntity>();
     public DbSet<HomeworkReadEntity> HomeworkReads => Set<HomeworkReadEntity>();
     public DbSet<TeachingSessionEntity> TeachingSessions => Set<TeachingSessionEntity>();
+    public DbSet<RecallEventEntity> RecallEvents => Set<RecallEventEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -19,5 +20,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<HomeworkReadEntity>().HasKey(e => e.Id);
         modelBuilder.Entity<HomeworkReadEntity>().Property(e => e.Id).ValueGeneratedOnAdd();
         modelBuilder.Entity<TeachingSessionEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<RecallEventEntity>().HasKey(e => e.Id);
+        modelBuilder.Entity<RecallEventEntity>().Property(e => e.Id).ValueGeneratedOnAdd();
     }
 }

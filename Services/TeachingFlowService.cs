@@ -551,11 +551,31 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFla
             // R7 signal: มี prior summary แต่ topic ไม่ตรง → recall under-trigger (exact match)
             logger?.LogInformation("recall_miss_topic prevTopic={PrevTopic} todayTopic={TodayTopic}",
                 summary.Topic, todayTopic);
+            await RecordRecallEventAsync("miss", summary.Topic, todayTopic);
             return null;
         }
 
         logger?.LogInformation("recall_shown topic={Topic}", summary.Topic);
+        await RecordRecallEventAsync("shown", summary.Topic, todayTopic);
         return new RecallResult(true, summary.RecallQuestion);
+    }
+
+    // observability: เก็บ recall event ลง DB เพื่อดึงมาแสดงบน admin (R7 metric)
+    // ห่อ try/catch — observability ห้ามทำให้ recall พัง
+    private async Task RecordRecallEventAsync(string kind, string topic, string todayTopic)
+    {
+        try
+        {
+            db.RecallEvents.Add(new RecallEventEntity
+            {
+                At = DateTime.UtcNow.ToString("O"),
+                Kind = kind,
+                Topic = topic,
+                TodayTopic = todayTopic,
+            });
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex) { logger?.LogWarning("recall_event_persist_failed kind={Kind} err={Err}", kind, ex.Message); }
     }
 
     internal static string NormalizeTopic(string topic) =>
@@ -566,6 +586,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFla
     public async Task<string> RecallFeedbackAsync(string recallQuestion, string answer, string topic)
     {
         logger?.LogInformation("recall_answered topic={Topic}", topic);   // ไม่ log ตัวคำตอบเด็ก
+        await RecordRecallEventAsync("answered", topic, "");
         var prompt = RecallFeedbackPrompt
             .Replace("{topic}", string.IsNullOrWhiteSpace(topic) ? "คณิตศาสตร์" : topic)
             .Replace("{recallQuestion}", recallQuestion)

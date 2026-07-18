@@ -137,6 +137,16 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("UPDATE LearningRecords SET StudentName = 'คนเก่ง' WHERE StudentName = ''"); } catch { }
 
     db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS RecallEvents (
+            Id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            At         TEXT NOT NULL,
+            Kind       TEXT NOT NULL,
+            Topic      TEXT NOT NULL DEFAULT '',
+            TodayTopic TEXT NOT NULL DEFAULT ''
+        );
+        """);
+
+    db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS LearningRecords (
             Id             TEXT NOT NULL PRIMARY KEY,
             Date           TEXT NOT NULL,
