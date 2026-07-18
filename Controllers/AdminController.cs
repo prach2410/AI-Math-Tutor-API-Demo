@@ -101,6 +101,28 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
         return Ok(new { weekStart = mondayStr, weekEnd = sundayStr, learningRecords = lrList, homeworkReads = hrList, homeworkSessions = hwList });
     }
 
+    // ⚠️ ไม่มี auth → demo/pilot เท่านั้น · rename StudentName ทุก table (แก้ชื่อสะกดผิด/รวมชื่อ)
+    [HttpPost("rename-student")]
+    public async Task<IActionResult> RenameStudent([FromBody] RenameStudentRequest req)
+    {
+        var from = (req.From ?? "").Trim();
+        var to   = (req.To ?? "").Trim();
+        if (from.Length == 0 || to.Length == 0)
+            return BadRequest(new { error = "ต้องระบุทั้ง from และ to" });
+        if (from == to)
+            return BadRequest(new { error = "from กับ to เหมือนกัน" });
+
+        // ExecuteSqlInterpolated = parameterized → ปลอดภัยจาก SQL injection
+        var hr = await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE HomeworkReads   SET StudentName = {to} WHERE StudentName = {from}");
+        var ts = await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE TeachingSessions SET StudentName = {to} WHERE StudentName = {from}");
+        var lr = await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE LearningRecords  SET StudentName = {to} WHERE StudentName = {from}");
+
+        return Ok(new { from, to, renamed = new { homeworkReads = hr, teachingSessions = ts, learningRecords = lr } });
+    }
+
     // observability: recall events (session continuity) — counts + recent · ดู R7 shown:miss
     [HttpGet("recall-events")]
     public async Task<IActionResult> GetRecallEvents([FromQuery] int limit = 50)
@@ -160,6 +182,8 @@ public class AdminController(AppDbContext db, LearningRecordsService learningRec
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    public record RenameStudentRequest(string From, string To);
 
     [HttpGet("export/homework/{id}")]
     public async Task<IActionResult> ExportHomework(string id)
