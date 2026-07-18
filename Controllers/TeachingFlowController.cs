@@ -8,13 +8,16 @@ namespace backend.Controllers;
 public class TeachingFlowController(TeachingFlowService service) : ControllerBase
 {
     public record StartRequest(string ProblemText, string Latex, string Topic, bool HasFigure,
-        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "", string StudentName = "");
+        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "", string StudentName = "",
+        string StudentId = "", string DeviceId = "");
     public record SolveRequest(string ProblemText, string Latex, string Topic,
-        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "", string StudentName = "");
+        string VisionModel = "", string AnalysisStartedAt = "", string AnalysisEndedAt = "", string StudentName = "",
+        string StudentId = "", string DeviceId = "");
     public record ExplainRequest(string ProblemText, string Topic, string StepText, string FullSolution = "");
     public record AnswerRequest(string Answer);
     public record HintRequest(int Level);
     public record ConfirmFigureRequest(string StudentNote);
+    public record RecallAnswerRequest(string RecallQuestion, string Answer, string Topic = "");
 
     [HttpPost("explain")]
     public async Task<IActionResult> Explain([FromBody] ExplainRequest req)
@@ -42,7 +45,8 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
         try
         {
             var result = await service.SolveAsync(req.ProblemText, req.Latex, req.Topic,
-                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt, req.StudentName);
+                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt, req.StudentName,
+                req.StudentId, req.DeviceId);
             return Ok(new
             {
                 sessionId         = result.SessionId,
@@ -57,6 +61,38 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
         }
     }
 
+    [HttpGet("recall")]
+    public async Task<IActionResult> Recall(
+        [FromQuery] string studentId = "", [FromQuery] string deviceId = "", [FromQuery] string topic = "")
+    {
+        try
+        {
+            var result = await service.GetRecallAsync(studentId, deviceId, topic);
+            return Ok(result is null
+                ? new { show = false, recallQuestion = "" }
+                : new { show = result.Show, recallQuestion = result.RecallQuestion });
+        }
+        catch (Exception ex)
+        {
+            // recall เป็น optional — ล้มเหลวไม่ควรบล็อกการบ้าน
+            return Ok(new { show = false, recallQuestion = "", detail = ex.Message });
+        }
+    }
+
+    [HttpPost("recall-answer")]
+    public async Task<IActionResult> RecallAnswer([FromBody] RecallAnswerRequest req)
+    {
+        try
+        {
+            var feedback = await service.RecallFeedbackAsync(req.RecallQuestion, req.Answer, req.Topic);
+            return Ok(new { feedback });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { feedback = "มาเริ่มการบ้านวันนี้กันเลย!", detail = ex.Message });
+        }
+    }
+
     [HttpPost("start")]
     public async Task<IActionResult> Start([FromBody] StartRequest req)
     {
@@ -66,7 +102,8 @@ public class TeachingFlowController(TeachingFlowService service) : ControllerBas
         try
         {
             var result = await service.StartAsync(req.ProblemText, req.Latex, req.Topic, req.HasFigure,
-                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt, req.StudentName);
+                req.VisionModel, req.AnalysisStartedAt, req.AnalysisEndedAt, req.StudentName,
+                req.StudentId, req.DeviceId);
 
             if (result.NeedsConfirm)
             {

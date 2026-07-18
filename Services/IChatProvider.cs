@@ -137,6 +137,16 @@ public class MockChatProvider : IChatProvider
                 { "level": 1, "help": "ลองดูว่าโจทย์ให้ข้อมูลอะไรมาบ้าง แล้วเราอยากรู้ค่าอะไร?" }
                 """);
 
+        if (prompt.Contains("\"recallQuestion\""))
+            return Task.FromResult("""
+                { "recallQuestion": "ครั้งก่อนเราฝึกเรื่องนี้ · ลองคิดดูว่าขั้นแรกเราต้องทำอะไรก่อน?" }
+                """);
+
+        if (prompt.Contains("\"feedback\""))
+            return Task.FromResult("""
+                { "feedback": "เก่งมากที่ลองทบทวนนะ · มาเริ่มการบ้านวันนี้กันเลย!" }
+                """);
+
         return Task.FromResult("""
             {
               "steps": [

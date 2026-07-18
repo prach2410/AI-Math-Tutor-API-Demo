@@ -21,4 +21,8 @@ public class TeachingSessionEntity
     public string AnalysisStartedAt { get; set; } = "";
     public string AnalysisEndedAt { get; set; } = "";
     public string StudentName { get; set; } = "";
+    public string? StudentId { get; set; }              // pseudonymous identity (session continuity)
+    public string? DeviceId { get; set; }               // fallback identity
+    public string EvidenceJson { get; set; } = "[]";    // observable evidence per step (verdict/hint/solution)
+    public string SummaryJson { get; set; } = "";       // structured summary (ว่าง = ยังไม่สร้าง) — session continuity
 }

@@ -43,6 +43,17 @@ else
         builder.Services.AddSingleton<IChatProvider>(_ => new ClaudeChatProvider(anthropicKey, "claude-sonnet-4-6"));
 }
 
+// อ่าน flag ด้วย pattern เดียวกับ LLM__* (config key ':' vs env var '__' → fallback ไป Environment)
+bool Flag(string key) => string.Equals(
+    builder.Configuration.GetValue<string>(key) ?? Environment.GetEnvironmentVariable(key),
+    "true", StringComparison.OrdinalIgnoreCase);
+
+builder.Services.AddSingleton(new FeatureFlags
+{
+    PersistStructuredSummary      = Flag("Features__PersistStructuredSummary"),
+    EnableSessionContinuityReview = Flag("Features__EnableSessionContinuityReview"),
+});
+
 builder.Services.AddScoped<TeachingFlowService>();
 
 var dbPath = builder.Configuration.GetValue<string>("DatabasePath") ?? "learning_sessions.db";
@@ -115,6 +126,10 @@ using (var scope = app.Services.CreateScope())
     try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN AnalysisEndedAt       TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE HomeworkReads ADD COLUMN StudentName           TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN StudentName        TEXT NOT NULL DEFAULT ''"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN StudentId          TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN DeviceId           TEXT"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN EvidenceJson       TEXT NOT NULL DEFAULT '[]'"); } catch { }
+    try { db.Database.ExecuteSqlRaw("ALTER TABLE TeachingSessions ADD COLUMN SummaryJson        TEXT NOT NULL DEFAULT ''"); } catch { }
     try { db.Database.ExecuteSqlRaw("ALTER TABLE LearningRecords ADD COLUMN StudentName         TEXT NOT NULL DEFAULT ''"); } catch { }
     // Backfill existing records: StudentName="" → "คนเก่ง"
     try { db.Database.ExecuteSqlRaw("UPDATE HomeworkReads SET StudentName = 'คนเก่ง' WHERE StudentName = ''"); } catch { }

@@ -28,7 +28,16 @@ public record AnswerResult(
 public record HintResult(int Level, string Help);
 public record SolveResult(string SessionId, string[] SolutionSteps, string UnderstandingStep, int[] KeyStepIndices);
 
-public class TeachingFlowService(AppDbContext db, IChatProvider chat)
+// observable evidence per step — Kind: "answer" | "hint" | "solution"
+public record SessionEvidenceItem(int Step, string Kind, string Verdict, int? HintLevel, string At);
+
+// structured summary projection (session continuity) — persisted to SummaryJson
+public record StructuredSummary(int Version, string Topic, List<string> NeedsPractice, string RecallQuestion);
+
+// ผลการหา recall สำหรับ learner ที่กลับมา (session continuity)
+public record RecallResult(bool Show, string RecallQuestion);
+
+public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFlags flags)
 {
     private const string FigureAnalysisPrompt = """
         คุณคือติวเตอร์คณิตศาสตร์ ม.2 กำลังอ่านโจทย์ที่มีรูปประกอบ
@@ -129,6 +138,37 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 
         ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON:
         { "studentNotes": "...", "parentSummary": "..." }
+        """;
+
+    private const string RecallQuestionPrompt = """
+        คุณคือติวเตอร์คณิตศาสตร์ ม.2 กำลังเตรียม "คำถามอุ่นเครื่อง" 1 ข้อ ให้เด็กทบทวนสิ่งที่เพิ่งเรียนไปก่อนหน้านี้
+        จะใช้เปิดครั้งถัดไปที่เด็กกลับมา
+
+        หัวข้อที่เรียน: {topic}
+        จุดที่เด็กยังต้องฝึก (จากที่ตอบผิด/ขอความช่วยเหลือ): {needsPractice}
+
+        สร้างคำถามสั้น 1 ข้อ:
+        - เจาะจง มีคำตอบเดียว ทำได้ในก้าวเดียว (ตอบได้ใน 1 นาที)
+        - โฟกัสที่ "แนวคิด" ของจุดที่ยังต้องฝึก ไม่ใช่โจทย์เดิมเป๊ะ
+        - โทนเป็นกันเอง ชวนคิด ไม่กดดัน · ถ้าไม่มีจุดต้องฝึก ให้ถามทวนแนวคิดหลักของหัวข้อ
+        - ❌ ห้ามลงท้ายด้วยรูปเปิดกว้าง ("...อย่างไรบ้าง" "...มีอะไรบ้าง")
+
+        ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON: { "recallQuestion": "..." }
+        """;
+
+    private const string RecallFeedbackPrompt = """
+        คุณคือติวเตอร์คณิตศาสตร์ ม.2 · เด็กเพิ่งตอบคำถามอุ่นเครื่องทบทวนก่อนเริ่มการบ้านวันนี้
+
+        หัวข้อ: {topic}
+        คำถามอุ่นเครื่อง: {recallQuestion}
+        คำตอบของเด็ก: {answer}
+
+        ตอบกลับสั้น ๆ 1-2 ประโยค:
+        - ถ้าตอบถูก/มาถูกทาง → ชมความพยายาม/การคิด (growth mindset) แล้วชวนไปเริ่มการบ้าน
+        - ถ้ายังไม่ตรง → ใบ้เบา ๆ ให้กำลังใจ ❌ ไม่เฉลย ❌ ไม่ตีตราว่าผิด แล้วชวนไปเริ่มการบ้าน
+        - โทนเป็นกันเอง ภาษาไทย ไม่กดดัน
+
+        ตอบ JSON เท่านั้น ห้ามมีข้อความนอก JSON: { "feedback": "..." }
         """;
 
     private const string SolvePrompt = """
@@ -237,7 +277,8 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
 
     public async Task<StartTeachingResult> StartAsync(
         string problemText, string latex, string topic, bool hasFigure,
-        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "", string studentName = "")
+        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "", string studentName = "",
+        string studentId = "", string deviceId = "")
     {
         var session = new TeachingSessionEntity
         {
@@ -254,6 +295,8 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             AnalysisStartedAt = analysisStartedAt,
             AnalysisEndedAt   = analysisEndedAt,
             StudentName       = StudentNameNormalizer.Normalize(studentName),
+            StudentId         = string.IsNullOrWhiteSpace(studentId) ? null : studentId,
+            DeviceId          = string.IsNullOrWhiteSpace(deviceId)  ? null : deviceId,
         };
 
         if (hasFigure)
@@ -331,9 +374,13 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         // S2b: LLM judge ตัดสินคำตอบของขั้นนี้
         var judge = await JudgeAsync(session.ProblemText, step, answer);
 
+        // MVP1.5: เก็บ verdict รายขั้นเป็น observable evidence (ทุกคำตอบ ไม่ว่าผ่านหรือไม่)
+        AppendEvidence(session, new SessionEvidenceItem(step.Step, "answer", judge.Verdict, null, DateTime.UtcNow.ToString("O")));
+
         if (judge.Verdict != "correct")
         {
             // ยังไม่ผ่านขั้นนี้ → อยู่ step เดิม ให้ feedback (ไม่เฉลย ไม่ข้ามขั้น)
+            await db.SaveChangesAsync();   // persist evidence (branch นี้เดิมไม่ save)
             return new AnswerResult(
                 judge.Verdict, judge.Reason, judge.Missing,
                 judge.Encouragement.Length > 0 ? judge.Encouragement : "ลองอีกครั้งนะ ใกล้แล้ว",
@@ -346,6 +393,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         {
             session.CurrentStep = steps.Count;
             session.Status = "done";
+            await BuildAndPersistSummaryAsync(session, steps);   // ขั้น 3: structured summary (ถ้า flag เปิด)
             await db.SaveChangesAsync();
             return new AnswerResult("correct", judge.Reason, "",
                 judge.Encouragement.Length > 0 ? judge.Encouragement : "เยี่ยมมาก! ทำโจทย์ครบทุกขั้นแล้ว!",
@@ -378,12 +426,148 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
         var help = ParseHint(raw);
 
         if (level == 4)   // guardrail: นับการเฉลย (Show Solution) → solution_shown_rate
-        {
             session.SolutionShownCount += 1;
-            await db.SaveChangesAsync();
-        }
+
+        // MVP1.5: บันทึก hint เป็น evidence (level 4 = solution)
+        AppendEvidence(session, new SessionEvidenceItem(
+            session.CurrentStep, level == 4 ? "solution" : "hint", "", level, DateTime.UtcNow.ToString("O")));
+        await db.SaveChangesAsync();
 
         return new HintResult(level, help);
+    }
+
+    private static void AppendEvidence(TeachingSessionEntity session, SessionEvidenceItem item)
+    {
+        List<SessionEvidenceItem> list;
+        try
+        {
+            list = JsonSerializer.Deserialize<List<SessionEvidenceItem>>(
+                string.IsNullOrWhiteSpace(session.EvidenceJson) ? "[]" : session.EvidenceJson) ?? [];
+        }
+        catch { list = []; }
+        list.Add(item);
+        session.EvidenceJson = JsonSerializer.Serialize(list);
+    }
+
+    // MVP1.5 ขั้น 3: สร้าง structured summary ตอน session จบ (gated: PersistStructuredSummary)
+    private async Task BuildAndPersistSummaryAsync(TeachingSessionEntity session, List<TeachingStep> steps)
+    {
+        if (!flags.PersistStructuredSummary) return;
+
+        var needsPractice = DeriveNeedsPractice(session.EvidenceJson);   // deterministic — ไม่ให้ LLM มโน
+
+        // แปลง "Step-N" → goal ของขั้นนั้น เพื่อป้อน LLM (เก็บ label ไว้ใน summary ตามเดิม)
+        var goalsText = needsPractice.Count == 0
+            ? "ไม่มี (ทวนแนวคิดหลักของหัวข้อ)"
+            : string.Join(" · ", needsPractice.Select(label =>
+                int.TryParse(label.AsSpan(5), out var n) && n >= 1 && n <= steps.Count
+                    ? steps[n - 1].Goal : label));
+
+        var topic = string.IsNullOrWhiteSpace(session.Topic) ? "คณิตศาสตร์" : session.Topic;
+        var recallQuestion = await GenerateRecallQuestionAsync(topic, goalsText);
+
+        session.SummaryJson = JsonSerializer.Serialize(
+            new StructuredSummary(1, topic, needsPractice, recallQuestion));
+    }
+
+    // needsPractice = ขั้นที่เคยตอบ wrong/partial (evidence จริง) — ห้ามโชว์เด็ก/ผู้ปกครอง (internal)
+    internal static List<string> DeriveNeedsPractice(string evidenceJson)
+    {
+        List<SessionEvidenceItem> items;
+        try
+        {
+            items = JsonSerializer.Deserialize<List<SessionEvidenceItem>>(
+                string.IsNullOrWhiteSpace(evidenceJson) ? "[]" : evidenceJson) ?? [];
+        }
+        catch { return []; }
+
+        return items
+            .Where(e => e.Kind == "answer" && e.Verdict is "wrong" or "partial")
+            .Select(e => e.Step)
+            .Distinct()
+            .OrderBy(s => s)
+            .Select(s => $"Step-{s}")
+            .ToList();
+    }
+
+    private async Task<string> GenerateRecallQuestionAsync(string topic, string needsPracticeText)
+    {
+        var prompt = RecallQuestionPrompt
+            .Replace("{topic}", topic)
+            .Replace("{needsPractice}", needsPracticeText);
+
+        var raw = await chat.CompleteAsync(prompt);
+        try
+        {
+            var json = ExtractJson(raw);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("recallQuestion", out var q))
+            {
+                var text = q.GetString();
+                if (!string.IsNullOrWhiteSpace(text)) return text;
+            }
+        }
+        catch { }
+        return $"ครั้งก่อนเราฝึกเรื่อง {topic} มาแล้ว · วันนี้ลองเริ่มด้วยการทบทวนกันนะ";
+    }
+
+    // MVP1.5 ขั้น 4: หา recall ของ learner ที่กลับมา (gated: EnableSessionContinuityReview)
+    public async Task<RecallResult?> GetRecallAsync(string studentId, string deviceId, string todayTopic)
+    {
+        if (!flags.EnableSessionContinuityReview) return null;
+
+        // identity: prefer studentId → fallback deviceId → ห้ามใช้ DisplayName
+        IQueryable<TeachingSessionEntity> q =
+            db.TeachingSessions.Where(s => s.Status == "done" && s.SummaryJson != "");
+        if (!string.IsNullOrWhiteSpace(studentId))
+            q = q.Where(s => s.StudentId == studentId);
+        else if (!string.IsNullOrWhiteSpace(deviceId))
+            q = q.Where(s => s.DeviceId == deviceId);
+        else
+            return null;
+
+        // CreatedAt = ISO-8601 UTC ("O") → เรียงตัวอักษรได้ตรงเวลา
+        var prev = await q.OrderByDescending(s => s.CreatedAt).FirstOrDefaultAsync();
+        if (prev is null) return null;
+
+        StructuredSummary? summary;
+        try { summary = JsonSerializer.Deserialize<StructuredSummary>(prev.SummaryJson); }
+        catch { return null; }
+        if (summary is null || string.IsNullOrWhiteSpace(summary.RecallQuestion)) return null;
+
+        // exact topic match (normalize เบา ๆ) — spec MVP1.5
+        // topic ว่าง (เช่น โจทย์พิมพ์เอง topic="") → ไม่ match กัน กัน false recall ข้ามเรื่อง
+        var todayNorm = NormalizeTopic(todayTopic);
+        if (todayNorm.Length == 0 || NormalizeTopic(summary.Topic) != todayNorm) return null;
+
+        return new RecallResult(true, summary.RecallQuestion);
+    }
+
+    internal static string NormalizeTopic(string topic) =>
+        string.Join(' ', (topic ?? "").Trim().ToLowerInvariant()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    // MVP1.5 ขั้น 5: ตอบรับคำตอบ recall (warm-up 1 turn — ไม่สร้าง TeachingSession)
+    public async Task<string> RecallFeedbackAsync(string recallQuestion, string answer, string topic)
+    {
+        var prompt = RecallFeedbackPrompt
+            .Replace("{topic}", string.IsNullOrWhiteSpace(topic) ? "คณิตศาสตร์" : topic)
+            .Replace("{recallQuestion}", recallQuestion)
+            .Replace("{answer}", answer);
+
+        var raw = await chat.CompleteAsync(prompt);
+        try
+        {
+            var json = ExtractJson(raw);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("feedback", out var f))
+            {
+                var text = f.GetString();
+                if (!string.IsNullOrWhiteSpace(text)) return text;
+            }
+        }
+        catch { }
+        return "เก่งมากที่ลองทบทวนนะ · มาเริ่มการบ้านวันนี้กันเลย!";
     }
 
     private record Judgement(string Verdict, string Reason, string Missing, string Encouragement);
@@ -507,7 +691,8 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
     }
 
     public async Task<SolveResult> SolveAsync(string problemText, string latex, string topic,
-        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "", string studentName = "")
+        string visionModel = "", string analysisStartedAt = "", string analysisEndedAt = "", string studentName = "",
+        string studentId = "", string deviceId = "")
     {
         var prompt = SolvePrompt
             .Replace("{problemText}", problemText)
@@ -549,7 +734,10 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat)
             AnalysisStartedAt = analysisStartedAt,
             AnalysisEndedAt   = analysisEndedAt,
             StudentName       = StudentNameNormalizer.Normalize(studentName),
+            StudentId         = string.IsNullOrWhiteSpace(studentId) ? null : studentId,
+            DeviceId          = string.IsNullOrWhiteSpace(deviceId)  ? null : deviceId,
         };
+        await BuildAndPersistSummaryAsync(session, []);   // ขั้น 3: solve-first → needsPractice ว่าง, recall จาก topic
         db.TeachingSessions.Add(session);
         await db.SaveChangesAsync();
 
