@@ -148,15 +148,24 @@ using (var scope = app.Services.CreateScope())
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS LearningRecords (
-            Id             TEXT NOT NULL PRIMARY KEY,
-            Date           TEXT NOT NULL,
-            DocumentType   TEXT NOT NULL,
-            Topic          TEXT NOT NULL,
-            Summary        TEXT NOT NULL,
-            HighlightsJson TEXT NOT NULL DEFAULT '[]',
-            KeywordsJson   TEXT NOT NULL DEFAULT '[]',
-            CreatedAt      TEXT NOT NULL,
-            StudentName    TEXT NOT NULL DEFAULT ''
+            Id                TEXT NOT NULL PRIMARY KEY,
+            Date              TEXT NOT NULL,
+            DocumentType      TEXT NOT NULL,
+            Topic             TEXT NOT NULL,
+            Summary           TEXT NOT NULL,
+            HighlightsJson    TEXT NOT NULL DEFAULT '[]',
+            KeywordsJson      TEXT NOT NULL DEFAULT '[]',
+            CreatedAt         TEXT NOT NULL,
+            StudentName       TEXT NOT NULL DEFAULT '',
+            -- columns added via ALTER above; included here so a FRESH DB (where the ALTERs
+            -- run before this CREATE and no-op) still gets them. LearningRecords ไม่ใช่ EF entity
+            -- → ไม่มี EnsureCreated รองรับเหมือน table อื่น
+            ImageHash         TEXT,
+            DownloadedAt      TEXT,
+            Reflection        TEXT,
+            VisionModel       TEXT,
+            AnalysisStartedAt TEXT,
+            AnalysisEndedAt   TEXT
         );
         """);
 
