@@ -2,6 +2,7 @@ using System.Text.Json;
 using backend.Data;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace backend.Services;
 
@@ -37,7 +38,9 @@ public record StructuredSummary(int Version, string Topic, List<string> NeedsPra
 // ผลการหา recall สำหรับ learner ที่กลับมา (session continuity)
 public record RecallResult(bool Show, string RecallQuestion);
 
-public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFlags flags)
+// logger เป็น optional (default null) → test เดิมที่ new TeachingFlowService(...) ไม่พัง · prod DI inject ให้
+public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFlags flags,
+    ILogger<TeachingFlowService>? logger = null)
 {
     private const string FigureAnalysisPrompt = """
         คุณคือติวเตอร์คณิตศาสตร์ ม.2 กำลังอ่านโจทย์ที่มีรูปประกอบ
@@ -468,6 +471,8 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFla
 
         session.SummaryJson = JsonSerializer.Serialize(
             new StructuredSummary(1, topic, needsPractice, recallQuestion));
+        logger?.LogInformation("summary_persisted topic={Topic} needsPracticeCount={Count}",
+            topic, needsPractice.Count);
     }
 
     // needsPractice = ขั้นที่เคยตอบ wrong/partial (evidence จริง) — ห้ามโชว์เด็ก/ผู้ปกครอง (internal)
@@ -508,6 +513,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFla
             }
         }
         catch { }
+        logger?.LogWarning("recall_question_fallback topic={Topic}", topic);   // LLM parse fail → ใช้ fallback
         return $"ครั้งก่อนเราฝึกเรื่อง {topic} มาแล้ว · วันนี้ลองเริ่มด้วยการทบทวนกันนะ";
     }
 
@@ -538,8 +544,17 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFla
         // exact topic match (normalize เบา ๆ) — spec MVP1.5
         // topic ว่าง (เช่น โจทย์พิมพ์เอง topic="") → ไม่ match กัน กัน false recall ข้ามเรื่อง
         var todayNorm = NormalizeTopic(todayTopic);
-        if (todayNorm.Length == 0 || NormalizeTopic(summary.Topic) != todayNorm) return null;
+        if (todayNorm.Length == 0) return null;
 
+        if (NormalizeTopic(summary.Topic) != todayNorm)
+        {
+            // R7 signal: มี prior summary แต่ topic ไม่ตรง → recall under-trigger (exact match)
+            logger?.LogInformation("recall_miss_topic prevTopic={PrevTopic} todayTopic={TodayTopic}",
+                summary.Topic, todayTopic);
+            return null;
+        }
+
+        logger?.LogInformation("recall_shown topic={Topic}", summary.Topic);
         return new RecallResult(true, summary.RecallQuestion);
     }
 
@@ -550,6 +565,7 @@ public class TeachingFlowService(AppDbContext db, IChatProvider chat, FeatureFla
     // MVP1.5 ขั้น 5: ตอบรับคำตอบ recall (warm-up 1 turn — ไม่สร้าง TeachingSession)
     public async Task<string> RecallFeedbackAsync(string recallQuestion, string answer, string topic)
     {
+        logger?.LogInformation("recall_answered topic={Topic}", topic);   // ไม่ log ตัวคำตอบเด็ก
         var prompt = RecallFeedbackPrompt
             .Replace("{topic}", string.IsNullOrWhiteSpace(topic) ? "คณิตศาสตร์" : topic)
             .Replace("{recallQuestion}", recallQuestion)
